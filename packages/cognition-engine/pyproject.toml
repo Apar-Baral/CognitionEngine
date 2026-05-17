@@ -37,8 +37,8 @@ dev = [
 ]
 
 [project.scripts]
-cognition-engine = "src.main:app"
-cc = "src.main:app"
+cognition-engine = "src.main:main"
+cc = "src.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -1,30 +1,37 @@
-"""CLI entry point for Cognition Engine (`cc` / `cognition-engine`)."""
+"""
+CLI entry point for Cognition Engine (`cc` / `cognition-engine`).
+"""
 
 from __future__ import annotations
 
-import typer
-from rich.console import Console
+import logging
+import signal
+import sys
 
-app = typer.Typer(
-    name="cc",
-    help="Cognition Engine — AI development orchestrator",
-    no_args_is_help=True,
-)
-console = Console()
+from src.cli.commands import app
+from src.core.exceptions import CognitionEngineError
 
 
-@app.callback()
+def _shutdown_handler(signum: int, frame: object) -> None:
+    _ = signum, frame
+    print("\nShutting down Cognition Engine...")
+    sys.exit(0)
+
+
+signal.signal(signal.SIGINT, _shutdown_handler)
+if hasattr(signal, "SIGTERM"):
+    signal.signal(signal.SIGTERM, _shutdown_handler)
+
+
 def main() -> None:
-    """Cognition Engine CLI."""
+    try:
+        app()
+    except CognitionEngineError as exc:
+        from src.cli import formatters
 
-
-@app.command("version")
-def version() -> None:
-    """Show installed version."""
-    from src import __version__
-
-    console.print(f"cognition-engine {__version__}")
+        formatters.print_error(exc.message, details=str(exc.details))
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":
-    app()
+    main()

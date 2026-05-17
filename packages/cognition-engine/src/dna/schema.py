@@ -185,11 +185,11 @@ DNA_SCHEMA: dict[str, Any] = {
             "required": ["total_phases", "current_phase", "phase_sequence"],
             "additionalProperties": False,
             "properties": {
-                "total_phases": {"type": "integer", "minimum": 1},
-                "current_phase": {"type": "integer", "minimum": 1},
+                "total_phases": {"type": "integer", "minimum": 0},
+                "current_phase": {"type": "integer", "minimum": 0},
                 "phase_sequence": {
                     "type": "array",
-                    "minItems": 1,
+                    "minItems": 0,
                     "items": {"$ref": "#/definitions/phase"},
                 },
             },
