@@ -161,6 +161,48 @@ class DNAMutator:
             apply,
         )
 
+    def add_failed_approach(self, record: dict[str, Any]) -> dict[str, Any]:
+        def apply(dna: dict[str, Any]) -> None:
+            reg = dna.setdefault("avoid_registry", {})
+            reg.setdefault("failed_approaches", []).append(record)
+
+        return self._mutate("add_failed_approach", apply)
+
+    def add_understood_file(self, path: str) -> dict[str, Any]:
+        norm = path.replace("\\", "/")
+
+        def apply(dna: dict[str, Any]) -> None:
+            reg = dna.setdefault("avoid_registry", {})
+            files = set(reg.get("understood_files", []))
+            files.add(norm)
+            reg["understood_files"] = sorted(files)
+
+        return self._mutate("add_understood_file", apply)
+
+    def add_deprecated_pattern(self, pattern: str) -> dict[str, Any]:
+        def apply(dna: dict[str, Any]) -> None:
+            reg = dna.setdefault("avoid_registry", {})
+            patterns = reg.setdefault("deprecated_patterns", [])
+            if pattern not in patterns:
+                patterns.append(pattern)
+
+        return self._mutate("add_deprecated_pattern", apply)
+
+    def manage_avoid_decay(self, accessed_ids: set[str]) -> dict[str, Any]:
+        def apply(dna: dict[str, Any]) -> None:
+            reg = dna.setdefault("avoid_registry", {})
+            for key in ("hallucinations", "failed_approaches"):
+                for item in reg.get(key, []):
+                    if not isinstance(item, dict):
+                        continue
+                    iid = item.get("id", "")
+                    if iid in accessed_ids:
+                        item["decay_count"] = 0
+                    else:
+                        item["decay_count"] = item.get("decay_count", 0) + 1
+
+        return self._mutate("manage_avoid_decay", apply)
+
     def add_insight(self, insight: dict[str, Any]) -> dict[str, Any]:
         def apply(dna: dict[str, Any]) -> None:
             if "id" not in insight:
