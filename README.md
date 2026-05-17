@@ -25,9 +25,26 @@ Cognition Engine is a **`cc` CLI** that orchestrates how you work with AI coding
 
 ## Installation
 
+This repository is a **monorepo**. The installable Python package is **not** the repo root — it is under `packages/cognition-engine/` (that folder contains `pyproject.toml`).
+
 ```bash
 git clone https://github.com/Apar-Baral/CognitionEngine.git
 cd CognitionEngine/packages/cognition-engine
+
+python3 -m venv .venv
+source .venv/bin/activate          # Linux/macOS
+# .venv\Scripts\activate           # Windows
+
+pip install -U pip
+pip install -e .
+```
+
+If you already created a venv at the repo root, either activate it and `cd` into `packages/cognition-engine` before `pip install -e .`, or create a new venv inside `packages/cognition-engine` as above.
+
+**Wrong (will fail):**
+
+```bash
+cd CognitionEngine          # repo root — no pyproject.toml here
 pip install -e .
 ```
 
