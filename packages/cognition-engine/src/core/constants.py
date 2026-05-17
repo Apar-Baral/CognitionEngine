@@ -301,6 +301,7 @@ DNA_SCHEMA_VERSION: Final[str] = "1.0.0"
 
 COGNITION_DIR: Final[str] = ".cognition"
 GLOBAL_CONFIG_PATH: Final[str] = "~/.cognition/config.yaml"
+MODELS_REGISTRY_PATH: Final[str] = "~/.cognition/models.yaml"
 
 
 def budget_zone_for_ratio(ratio: float) -> BudgetZone:

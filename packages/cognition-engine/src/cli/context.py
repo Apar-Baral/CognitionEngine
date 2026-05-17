@@ -264,3 +264,34 @@ class ProjectContext:
             phases[0]["status"] = PhaseStatus.IN_PROGRESS.value
         dna["project"]["last_updated"] = datetime.now(timezone.utc).isoformat()
         return self.loader.save(dna)
+
+    def model_registry(self) -> Any:
+        from src.models.dynamic_registry import DynamicRegistry
+
+        if not hasattr(self, "_model_registry"):
+            self._model_registry = DynamicRegistry()
+        return self._model_registry
+
+    def intelligent_router(self) -> Any:
+        from src.models.fallback_manager import FallbackManager
+        from src.models.intelligent_router import IntelligentRouter
+
+        if not hasattr(self, "_router"):
+            reg = self.model_registry()
+            self._router = IntelligentRouter(reg, self.config.data, fallback=FallbackManager(reg))
+        return self._router
+
+    def knowledge_synthesizer(self) -> Any:
+        from src.synthesizer.knowledge_synthesizer import KnowledgeSynthesizer
+
+        return KnowledgeSynthesizer(
+            self.query,
+            self.mutator,
+            self.session_store(),
+            self.metrics_store(),
+        )
+
+    def rl_allocator(self) -> Any:
+        from src.optimizer.rl_allocator import RLAllocator
+
+        return RLAllocator(self.query, self.metrics_store(), mutator=self.mutator)

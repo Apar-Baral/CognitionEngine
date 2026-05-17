@@ -242,11 +242,36 @@ def cmd_end(
         predictor.calibrate("BUILD", phase_id, sess_summary["tokens"]["total"], session_id=int(state["session_id"]))
 
         formatters.print_renderable(formatters.format_session_summary(sess_summary))
-        insights = ctx.query.get_unapplied_insights()
+
+        new_insights = ctx.knowledge_synthesizer().synthesize(sess_summary)
+        rl = ctx.rl_allocator()
+        rl.record_session_result(
+            state.get("session_type", "BUILD"),
+            "MEDIUM",
+            rl.get_recommended_allocation(state.get("session_type", "BUILD")),
+            float(sess_summary.get("efficiency_score", 50)),
+            outcome=sess_summary,
+        )
+
+        insights = new_insights or ctx.query.get_unapplied_insights()
         if insights:
-            formatters.print_rule("New insights")
+            formatters.print_rule("Insights")
             for ins in insights[:5]:
                 formatters.print_renderable(formatters.format_insight(ins))
+        from src.navigator.recommendation_engine import RecommendationEngine
+        from src.navigator.complexity_forecaster import ComplexityForecaster
+        from src.navigator.debt_detector import DebtDetector
+        from src.navigator.dependency_resolver import DependencyResolver
+        from src.navigator.phase_tracker import PhaseTracker
+
+        rec_engine = RecommendationEngine(
+            PhaseTracker(ctx.query, ctx.mutator),
+            DependencyResolver(ctx.query),
+            ComplexityForecaster(ctx.query, ctx.root),
+            DebtDetector(ctx.query, ctx.root),
+            ctx.query,
+        )
+        formatters.print_info(f"Next: {rec_engine.get_next_session_prompt()}")
 
         ctx.clear_session_state()
         formatters.print_success("Session ended. Run `cc start` for your next session.")
@@ -457,6 +482,42 @@ def cmd_validate(
                 formatters.print_success("Applied corrections.")
         if verdict == "BLOCK":
             raise typer.Exit(1)
+    except Exception as e:
+        _handle_error(e)
+
+
+@app.command("models")
+def cmd_models(
+    list_all: bool = typer.Option(False, "--list", help="List all models"),
+    status: bool = typer.Option(False, "--status", help="Show availability status"),
+    route: bool = typer.Option(False, "--route", help="Show routing decision for BUILD/MEDIUM"),
+) -> None:
+    """List models, health status, or sample routing."""
+    try:
+        reg = _ctx().model_registry()
+        fb = __import__("src.models.fallback_manager", fromlist=["FallbackManager"]).FallbackManager(reg)
+        if list_all or (not status and not route):
+            rows = []
+            for mid in reg.list_models():
+                m = reg.get_model(mid) or {}
+                p = m.get("pricing") or {}
+                rows.append(
+                    [
+                        mid,
+                        m.get("provider", ""),
+                        m.get("tier", ""),
+                        f"${float(p.get('input_per_1k', 0)):.4f}",
+                    ]
+                )
+            formatters.print_renderable(formatters.format_table(["ID", "Provider", "Tier", "In/1k"], rows))
+        if status:
+            st = fb.get_status()
+            for mid, s in sorted(st.items()):
+                formatters.print_info(f"{mid}: {s}")
+        if route:
+            router = _ctx().intelligent_router()
+            result = router.route_task(task_complexity="MEDIUM", budget_zone="green")
+            formatters.print_success(router.explain_routing(result))
     except Exception as e:
         _handle_error(e)
 
