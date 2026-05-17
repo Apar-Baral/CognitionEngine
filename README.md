@@ -51,8 +51,30 @@ pip install -e .
 Verify:
 
 ```bash
-cc --version
-cc --help
+ce --version
+ce --help
+```
+
+### Linux / Kali: do not use bare `cc`
+
+On Unix, **`cc` is the system C compiler** (gcc), not Cognition Engine. If you see errors like `liblto_plugin.so` or `unrecognized command-line option '--goal'`, you are calling the wrong program.
+
+| Use this | Avoid on Linux |
+|----------|----------------|
+| `ce` | `cc` (conflicts with gcc) |
+| `cognition-engine` | — |
+
+```bash
+which ce              # should point to your venv, e.g. .../venv/bin/ce
+which cc              # often /usr/bin/cc — that's gcc
+```
+
+After install, prefer:
+
+```bash
+ce init
+ce plan --goal "..."
+ce start --preview
 ```
 
 On first use, Cognition Engine creates (if missing):

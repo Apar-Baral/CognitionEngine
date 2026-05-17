@@ -38,6 +38,7 @@ dev = [
 
 [project.scripts]
 cognition-engine = "src.main:main"
+ce = "src.main:main"
 cc = "src.main:main"
 
 [tool.setuptools.packages.find]
