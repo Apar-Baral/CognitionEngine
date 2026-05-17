@@ -76,6 +76,222 @@ cc status
 
 ---
 
+## Worked example: “I want to develop an XSS finder in a webapp”
+
+This walks through a **real project** from zero: a web application that scans pages or forms for cross-site scripting (XSS) risks. Cognition Engine does not write the scanner for you — it **plans the work**, **remembers context** between sessions, and **validates** AI-generated code before you trust it.
+
+### What you are building (the product)
+
+| Piece | Description |
+|-------|-------------|
+| **Web UI** | Upload URL or paste HTML; show scan results |
+| **Scanner core** | Parse inputs, detect reflected/stored XSS patterns, report severity |
+| **API** | Optional REST API for CI integration |
+| **Tests** | Fixtures with safe/unsafe samples so the AI does not hallucinate test helpers |
+
+Cognition Engine sits **next to** this repo — in a terminal — while you code in **Cursor** or **Claude Code**.
+
+### Step 0 — Install Cognition Engine (once per machine)
+
+```bash
+git clone https://github.com/Apar-Baral/CognitionEngine.git
+cd CognitionEngine/packages/cognition-engine
+pip install -e .
+cc --version
+```
+
+### Step 1 — Create your application project
+
+```bash
+mkdir xss-finder-webapp
+cd xss-finder-webapp
+git init
+# Scaffold your stack (example: Python/FastAPI + React — use whatever you prefer)
+```
+
+This folder is **your product**. All `cc` commands run **inside** `xss-finder-webapp/`, not inside the Cognition Engine repo.
+
+### Step 2 — Global configuration (`~/.cognition/config.yaml`)
+
+Create or edit this file on your machine. **Never commit it to git.**
+
+For a security tool (where bad imports and fake APIs are costly), use a **stricter shield** and a **solid default model**:
+
+```yaml
+# ~/.cognition/config.yaml
+
+default_model: claude-sonnet-4-20250514
+
+shield_sensitivity: high   # stricter Hallucination Shield (cc validate)
+
+api_keys:
+  anthropic: sk-ant-...    # at least one provider
+  openai: sk-...
+
+proxy:
+  enabled: false           # set true later if you want token budgets via proxy
+  host: 127.0.0.1
+  port: 8787
+
+budgets:
+  BUILD: 75000             # tokens per BUILD session
+  DEBUG: 50000
+  EXPLORE: 35000             # useful for spike / research sessions
+```
+
+**Optional — economy model for boilerplate** (edit `~/.cognition/models.yaml`, already created on first run):
+
+Use a premium model for architecture and security-critical modules; route simple UI copy or docs to `gpt-4o-mini` or `deepseek-chat` via `cc start --model gpt-4o-mini` when appropriate.
+
+### Step 3 — Initialize Cognition Engine in the webapp repo
+
+```bash
+cd xss-finder-webapp
+cc init
+```
+
+This creates:
+
+```text
+xss-finder-webapp/
+  .cognition/
+    dna.json
+    config.yaml
+    sessions/
+```
+
+### Step 4 — Generate a phased plan for the XSS finder
+
+```bash
+cc plan --goal "Develop a web application that finds XSS vulnerabilities: users submit a URL or HTML, the backend runs static/heuristic checks for reflected and stored XSS patterns, results show severity and evidence snippets. Include a test suite with known-safe and known-vulnerable fixtures. Target Python FastAPI backend and a simple React frontend."
+```
+
+Review the printed phase map. Typical phases might look like:
+
+| Phase | Focus |
+|-------|--------|
+| PHASE_01 | Discovery — scope, threat model, stack |
+| PHASE_02 | Project skeleton, CI, config |
+| PHASE_03 | Scanner core (parsing, rules) |
+| PHASE_04 | API endpoints |
+| PHASE_05 | Frontend UI |
+| PHASE_06 | Test fixtures (XSS samples) |
+| PHASE_07 | Auth / rate limits (if needed) |
+| PHASE_08 | Hardening & documentation |
+
+Confirm or re-plan:
+
+```bash
+cc plan --force --goal "..."   # only if you want to replace the plan
+```
+
+### Step 5 — Integrate with Cursor or Claude Code (the technique)
+
+Cognition Engine **does not plug into your webapp’s runtime**. Integration is **workflow + files**:
+
+```text
+  Terminal (you)                    AI editor (Cursor / Claude Code)
+  ─────────────                     ───────────────────────────────
+  cc start  ──►  writes  ──►  .cognition/bootstrap.md  ──►  AI reads this
+  cc end    ◄──  saves    ◄──  your edits + summary      ◄──  you code
+```
+
+#### Option A — Cursor (recommended)
+
+1. Run `cc start` in `xss-finder-webapp/`.
+2. Open **`.cognition/bootstrap.md`** — phase, sub-tasks, avoid list, budget.
+3. Create **`.cursor/rules/cognition-engine.mdc`** (once):
+
+```markdown
+---
+description: Cognition Engine session context
+globs: *
+alwaysApply: true
+---
+
+At the start of each coding session, read and follow:
+`.cognition/bootstrap.md`
+
+That file defines the current phase, tasks, and patterns to avoid (e.g. invented security libraries).
+Do not introduce dependencies that are not already in the project without checking.
+```
+
+4. Start a Cursor Agent/Chat session — it should respect the rule and bootstrap.
+5. When finished: `cc end --summary "Implemented URL fetch + basic reflected XSS rule"`.
+
+#### Option B — Claude Code
+
+1. `cc start`
+2. Copy the contents of `.cognition/bootstrap.md` into **`CLAUDE.md`** at the project root (or add: “Read `.cognition/bootstrap.md` before coding.”).
+3. Run Claude Code in the same directory.
+4. `cc end` when done.
+
+#### Option C — Manual paste (any editor)
+
+1. `cc start --preview` → read output in terminal.
+2. Paste bootstrap text into the **first message** of a new chat.
+3. Code; then `cc end`.
+
+### Step 6 — First coding session (example commands)
+
+```bash
+# See context without starting
+cc start --preview
+
+# Start session focused on scanner core
+cc start --task "Implement reflected XSS detection for query parameters in HTML responses"
+
+# While the AI generates code, validate critical files:
+cc validate backend/scanner/reflected.py
+cc validate backend/scanner/rules.py
+
+# Check token budget mid-session (if using proxy, or after end)
+cc budget
+
+# Close session
+cc end --summary "Added reflected XSS rule and 12 unit tests with fixtures"
+```
+
+### Step 7 — Next sessions (same project, no re-init)
+
+```bash
+cc status                    # see PHASE_03 progress, blockers
+cc start                     # bootstrap picks up where DNA left off
+# ... work in Cursor ...
+cc validate path/to/new_file.py
+cc end --summary "Stored XSS detection + API endpoint /scan"
+cc insights                  # patterns from past sessions
+```
+
+You only run `cc init` and `cc plan` **once** per repo (unless you deliberately replan).
+
+### Step 8 — Optional: token proxy
+
+If you want **automatic** token counting and budget warnings:
+
+1. In `~/.cognition/config.yaml`: `proxy.enabled: true` and valid `api_keys`.
+2. In Cursor: set the OpenAI-compatible / custom API base URL to `http://127.0.0.1:8787` (if your setup routes through it).
+3. Always: `cc start` → work → `cc end` → `cc budget`.
+
+### Configuration summary for this example
+
+| What | Where | Suggested value |
+|------|--------|-----------------|
+| API keys | `~/.cognition/config.yaml` | Your Anthropic/OpenAI keys |
+| Shield strictness | `~/.cognition/config.yaml` | `high` for security code |
+| Session budget | `~/.cognition/config.yaml` → `budgets.BUILD` | `75000` (adjust down if needed) |
+| Project settings | `.cognition/config.yaml` | Created by `cc init`; tune with `cc config --list` |
+| AI session context | `.cognition/bootstrap.md` | Regenerated every `cc start` |
+| Cursor integration | `.cursor/rules/cognition-engine.mdc` | Points AI at bootstrap |
+| Plan & memory | `.cognition/dna.json` | Updated by `cc plan`, `cc end` |
+
+### What Cognition Engine is *not* doing
+
+- It is **not** deployed inside your webapp to scan XSS for end users.
+- It is **not** a replacement for OWASP ZAP or Burp — you are **building** a finder; `cc` manages **how you build it with AI**.
+
+---
+
 ## Daily workflow (managing AI coding sessions)
 
 Use this loop every time you sit down to code.

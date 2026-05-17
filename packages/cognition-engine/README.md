@@ -2,7 +2,7 @@
 
 This directory is the installable Python package. After `pip install -e .`, the **`cc`** command is available globally.
 
-**Repo-level guide (recommended starting point):** [../../README.md](../../README.md)
+**Repo-level guide (recommended starting point):** [../../README.md](../../README.md) — includes a full **worked example** (XSS finder webapp): configuration, `cc` commands, and Cursor/Claude integration.
 
 ---
 
