@@ -17,6 +17,12 @@ TOKEN_MULTIPLIER = 1.3
 SECTION_RULE = "═" * 63
 SECTION_MINOR = "─" * 63
 
+DEFAULT_CODING_STANDARDS = [
+    "Match existing module style; reuse project abstractions before adding new ones.",
+    "Only change code required by the task; avoid drive-by refactors.",
+    "Run relevant tests before ending the session.",
+]
+
 
 def estimate_tokens(text: str) -> int:
     """Estimate tokens as word_count * 1.3."""
@@ -304,6 +310,12 @@ class ContextCompiler:
                 f"Phase efficiency: token ratio {eff.get('token_ratio')}, "
                 f"{eff.get('subtasks_completed')}/{eff.get('subtasks_total')} sub-tasks done"
             )
+
+        parts.append("")
+        parts.append("Coding standards:")
+        for rule in DEFAULT_CODING_STANDARDS:
+            parts.append(f"  • {rule}")
+
         return parts
 
     def _fit_tier2(self, parts: list[str], budget: int) -> str:
