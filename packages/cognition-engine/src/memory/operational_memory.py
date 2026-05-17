@@ -154,6 +154,14 @@ class OperationalMemory:
             }
         )
 
+    @property
+    def api_calls(self) -> list[dict[str, Any]]:
+        return list(self._api_calls)
+
+    @property
+    def file_operations(self) -> list[dict[str, Any]]:
+        return list(self._file_ops)
+
     def _total_tokens(self) -> dict[str, int]:
         inp = sum(c["input_tokens"] for c in self._api_calls)
         out = sum(c["output_tokens"] for c in self._api_calls)
