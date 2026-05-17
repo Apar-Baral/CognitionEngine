@@ -77,6 +77,38 @@ ce plan --goal "..."
 ce start --preview
 ```
 
+### `ce: command not found` (install did not complete)
+
+You must install **from** `packages/cognition-engine/` and use the venv that has the package:
+
+```bash
+cd /path/to/CognitionEngine/packages/cognition-engine
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip wheel
+pip install -e .
+hash -r
+
+which cognition-engine    # must print .../.venv/bin/cognition-engine
+cognition-engine --version
+```
+
+Then use **`cognition-engine`** or **`ce`** (after `git pull` + reinstall):
+
+```bash
+cognition-engine init
+# or
+/path/to/CognitionEngine/packages/cognition-engine/ce init   # no install needed
+```
+
+**Without reinstalling** (from `packages/cognition-engine` only):
+
+```bash
+chmod +x ce
+./ce init
+./ce plan --goal "Your goal"
+```
+
 On first use, Cognition Engine creates (if missing):
 
 | Path | Purpose |
