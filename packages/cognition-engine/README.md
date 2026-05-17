@@ -1,98 +1,171 @@
-# Cognition Engine
+# Cognition Engine — package & `cc` CLI
 
-**AI Development Orchestrator** — persistent memory, phased planning, hallucination prevention, token budgeting, and intelligent multi-provider model routing.
+This directory is the installable Python package. After `pip install -e .`, the **`cc`** command is available globally.
 
-## What it does
+**Repo-level guide (recommended starting point):** [../../README.md](../../README.md)
 
-Cognition Engine wraps AI coding workflows (Claude Code, Cursor, and similar tools) with:
+---
 
-- **Project DNA** — structured master plan, phases, sub-tasks, and session history
-- **Bootstrap context** — compact, tiered session prompts built from memory
-- **API proxy** — token counting, budget zones, and cost projection
-- **Hallucination Shield** — import/API validation before bad code lands
-- **Strategic Navigator** — dependencies, critical path, debt, and recommendations
-- **Dynamic model registry** — route tasks to the best LLM by complexity and budget (`~/.cognition/models.yaml`)
-- **Knowledge synthesis** — insights from every session; RL learns token allocation splits
-
-## Requirements
-
-- Python 3.11+
-- Git (optional; used for debt age / blame)
-- API keys in `~/.cognition/config.yaml` (never in the project repo)
-
-## Installation
+## Install
 
 ```bash
-cd packages/cognition-engine
+# From this directory:
+pip install -e .
+
+# With dev tools (pytest, ruff, etc.):
 pip install -e ".[dev]"
 ```
 
-Verify the CLI:
-
 ```bash
-cc --version
+cc --version    # e.g. cognition-engine 0.1.0
 cc --help
 ```
 
-On first run, Cognition Engine creates:
+---
 
-| Path | Purpose |
-|------|---------|
-| `~/.cognition/config.yaml` | Global settings and API keys |
-| `~/.cognition/models.yaml` | Model registry (edit to add providers) |
+## First-time machine setup
 
-## Quick start (new project)
+### 1. Install the CLI (above)
 
-```bash
-cd /path/to/your/project
-cc init
-cc plan --goal "Build a REST API for a todo app"
-cc start --preview          # inspect bootstrap context
-cc start                    # begin session (see proxy note below)
-# ... work with your AI tool ...
-cc end
-cc status
-cc insights
-cc models --list
-cc models --status
-```
-
-## Configuration
-
-### Project config (`.cognition/config.yaml`)
-
-Created by `cc init`. Controls budgets, shield sensitivity, default model id, and proxy port.
-
-```bash
-cc config --list
-cc config --key shield_sensitivity --value high
-```
-
-### Global config (`~/.cognition/config.yaml`)
+### 2. Create `~/.cognition/config.yaml`
 
 ```yaml
 default_model: claude-sonnet-4-20250514
 shield_sensitivity: medium
+
 api_keys:
-  anthropic: sk-ant-...
-  openai: sk-...
-  deepseek: sk-...
+  anthropic: YOUR_KEY
+  openai: YOUR_KEY
+  deepseek: YOUR_KEY
+
 proxy:
-  enabled: true
+  enabled: false
+  host: 127.0.0.1
   port: 8787
 ```
 
-### Model registry (`~/.cognition/models.yaml`)
+Never put API keys in the project repo — only in this global file.
 
-Add any OpenAI-compatible, Anthropic, Google, OpenRouter, or Ollama endpoint without code changes. The file is watched for changes and reloads automatically.
+### 3. Model registry
 
-Example custom model:
+On first run, `~/.cognition/models.yaml` is copied from `config/default_models.yaml` in this package. Edit it to add/remove models; changes apply without restart.
+
+---
+
+## Usage on your project
+
+### Initialize
+
+```bash
+cd /path/to/your-application
+cc init
+```
+
+### Plan
+
+```bash
+cc plan --goal "E-commerce API with Stripe and PostgreSQL"
+cc plan --goal "Refactor monolith" --phases 15 --force   # replace existing plan
+```
+
+### Session lifecycle
+
+```bash
+# Preview context (no active session file)
+cc start --preview
+
+# Start session
+cc start
+cc start --task "Implement password reset flow"
+cc start --budget 50000 --model gpt-4o-mini
+
+# During work
+cc status
+cc budget
+cc validate src/auth/service.py
+
+# End session
+cc end
+cc end --summary "Completed reset email + tests" --tokens 42000
+```
+
+### After session
+
+```bash
+cc insights
+cc history --limit 10
+cc status --detailed
+cc status --phase PHASE_05
+```
+
+---
+
+## Bootstrap file (critical for AI tools)
+
+Every `cc start` writes:
+
+**`.cognition/bootstrap.md`**
+
+This file contains:
+
+- Current phase and sub-task  
+- Project goal and constraints  
+- “Avoid” registry (known hallucinations, failed approaches)  
+- Recommended token budget  
+- Resume instructions from the last session  
+
+**You must feed this to your AI tool** (Cursor chat, Claude Code / `CLAUDE.md`, etc.). Cognition Engine does not inject it automatically unless you use a host adapter.
+
+---
+
+## Token proxy
+
+| Setting | Location |
+|---------|----------|
+| Enable | `~/.cognition/config.yaml` → `proxy.enabled: true` |
+| URL for AI tool | `http://127.0.0.1:8787` |
+| Keys | `api_keys` in same global config |
+
+Workflow:
+
+```bash
+cc start          # arms budget tracking
+# ... API calls via proxy ...
+cc end            # records session totals
+cc budget         # review usage
+```
+
+Budget zones: **green** (safe) → **yellow** (caution) → **red** (wrap up) → **exhausted**.
+
+---
+
+## Hallucination Shield
+
+```bash
+cc validate path/to/file.py
+```
+
+Runs import validation and static checks against a truth index built from your codebase. Use on AI-generated files before merging.
+
+---
+
+## Model registry & routing
+
+```bash
+cc models --list      # all models in models.yaml
+cc models --status    # circuit breakers / availability
+cc models --route     # sample routing decision
+```
+
+Routing considers task complexity, required capabilities (`tool_use`, `vision`, …), and budget zone. Configure models in `~/.cognition/models.yaml`.
+
+Example — add local Ollama:
 
 ```yaml
 models:
-  - id: my-local-llm
+  - id: llama3-local
     provider: ollama
-    display_name: Local LLM
+    display_name: Llama 3 Local
     api_base: http://localhost:11434
     endpoint: /api/chat
     auth_header: ""
@@ -107,67 +180,61 @@ models:
     custom: true
 ```
 
-## CLI reference
+---
 
-| Command | Description |
-|---------|-------------|
-| `cc init` | Initialize `.cognition/` and DNA |
-| `cc plan` | Generate master plan from a goal |
-| `cc start` | Start session; optional `--preview`, `--task`, `--budget`, `--model` |
-| `cc end` | End session, synthesize insights, update RL |
-| `cc status` | Progress map and summary |
-| `cc budget` | View or set token budget |
-| `cc insights` | Show generated insights |
-| `cc history` | Session history |
-| `cc config` | View/edit configuration |
-| `cc validate <file>` | Run Hallucination Shield on a file |
-| `cc models --list` | List registered models |
-| `cc models --status` | Circuit breaker / availability |
-| `cc models --route` | Sample routing decision |
-| `cc completion install` | Shell tab completion |
+## Full CLI reference
 
-Global options: `--project PATH`, `--verbose`, `--version`
+| Command | Flags / notes |
+|---------|----------------|
+| `init` | `[project_path]` |
+| `plan` | `--goal`, `--phases`, `--force` |
+| `start` | `--preview`, `--task`, `--budget`, `--model`, `--phase` |
+| `end` | `--summary`, `--tokens` |
+| `status` | `--detailed`, `--phase PHASE_XX` |
+| `budget` | `--set N`, `--show` |
+| `insights` | — |
+| `history` | `--limit`, `--phase` |
+| `config` | `--list`, `--key`, `--value` |
+| `validate` | `FILE` required; `--code` optional |
+| `models` | `--list`, `--status`, `--route` |
+| `completion` | `install` subcommand |
 
-Use `cc --project /path/to/project COMMAND` when not in the project directory.
+**Globals:** `--project PATH`, `-p PATH`, `--verbose`, `-v`, `--version`
 
-## API proxy (optional)
+---
 
-Point your AI tool at the local proxy to enforce budgets and log usage:
+## Architecture (MVP)
 
-```text
-http://127.0.0.1:8787
-```
+| Module | Role |
+|--------|------|
+| `src/dna/` | Project DNA schema, load/save, mutations |
+| `src/memory/` | Strategic / tactical / operational memory, sessions, metrics |
+| `src/bootstrap/` | Context compiler, bootstrap generator |
+| `src/proxy/` | API proxy, token counter, budget enforcer |
+| `src/shield/` | Truth DB, import validator, validation pipeline |
+| `src/cli/` | Typer commands, Rich UI |
+| `src/visualization/` | Progress maps, dashboards |
+| `src/navigator/` | Phases, dependencies, debt, recommendations |
+| `src/models/` | Registry, request/response, router, fallback, pricing |
+| `src/optimizer/` | RL token allocation |
+| `src/synthesizer/` | Post-session insights |
+| `src/planner/` | Phase plan generation |
+| `src/scanner/` | Project detection on `cc init` |
 
-Enable in config (`proxy.enabled: true`). The proxy forwards to provider APIs and tracks tokens per session.
+Entry point: `src/main.py` → console script `cc`.
 
-## Architecture (MVP modules)
+---
 
-```text
-src/
-  core/          Config, constants, types, exceptions
-  dna/           Project DNA load/save/validate
-  memory/        Strategic, tactical, operational, sessions, metrics
-  bootstrap/     Context compiler and session bootstrap
-  proxy/         API proxy and budget enforcement
-  shield/        Hallucination validation pipeline
-  cli/           Typer commands and Rich formatters
-  visualization/ Progress maps, dashboards, heat maps
-  navigator/     Phase tracking, dependencies, debt, recommendations
-  models/        Registry, request builder, router, fallback, pricing
-  optimizer/     RL token allocation and rewards
-  synthesizer/   Knowledge synthesis and trends
-  planner/       Phase plan generation
-  scanner/       Project detection on init
-```
-
-## Development
+## Run tests
 
 ```bash
-pip install -e ".[dev]"
 pytest tests/test_phase1_core.py tests/test_phase2_dna.py tests/test_phase3_memory.py \
   tests/test_phase4_bootstrap.py tests/test_phase5_proxy.py tests/test_phase6_shield.py \
-  tests/test_phase7_cli.py tests/test_phase8_visualization_navigator.py tests/test_phase9_models.py -q
+  tests/test_phase7_cli.py tests/test_phase8_visualization_navigator.py \
+  tests/test_phase9_models.py -q
 ```
+
+---
 
 ## License
 
