@@ -1,14 +1,9 @@
 """Cognition Engine REPL visual theme."""
 
-CE_BRAND_MARKUP = """[bold #58a6ff]╭────────────────────────────╮[/]
-[bold #58a6ff]│[/]  [bold #6cb6ff]●[/] [bold white]██████╗[/][bold #79c0ff]╗[/] [bold white]███████╗[/]   [bold #58a6ff]│[/]
-[bold #58a6ff]│[/]     [bold white]██╔═══[/][bold #79c0ff]██╗[/][bold white]██╔════╝[/]   [bold #58a6ff]│[/]
-[bold #58a6ff]│[/]     [bold white]██║[/]   [bold #79c0ff]██║[/][bold white]█████╗[/]     [bold #58a6ff]│[/]
-[bold #58a6ff]│[/]  [bold #6cb6ff]◆[/] [bold white]██║[/]   [bold #79c0ff]██║[/][bold white]██╔══╝[/]     [bold #58a6ff]│[/]
-[bold #58a6ff]│[/]     [bold white]╚██████╔╝[/][bold #79c0ff]███████╗[/]  [bold #58a6ff]│[/]
-[bold #58a6ff]│[/]      [dim]╚═════╝ ╚══════╝[/]       [bold #58a6ff]│[/]
-[bold #58a6ff]│[/]  [bold #6cb6ff]C O G N I T I O N[/] [bold #79c0ff]E N G I N E[/]  [bold #58a6ff]│[/]
-[bold #58a6ff]╰────────────────────────────╯[/]"""
+CE_BRAND_MARKUP = """[bold #58a6ff]╭──────────────╮[/]
+[bold #58a6ff]│[/] [bold white]COGNITION[/] [bold #58a6ff]│[/]
+[bold #58a6ff]│[/] [bold #6cb6ff]ENGINE[/]    [bold #58a6ff]│[/]
+[bold #58a6ff]╰──────────────╯[/]"""
 
 CE_APP_CSS = """
 Screen {
@@ -32,9 +27,9 @@ Footer {
 }
 
 #left-rail {
-    width: 36;
-    min-width: 32;
-    max-width: 42;
+    width: 26;
+    min-width: 24;
+    max-width: 28;
     height: 1fr;
     background: #111820;
     border-right: solid #2d3a4f;
@@ -52,7 +47,7 @@ Footer {
 #ce-brand {
     width: 100%;
     height: auto;
-    min-height: 14;
+    min-height: 5;
     text-align: center;
     padding: 1 0;
     margin-bottom: 1;
@@ -134,9 +129,9 @@ Footer {
 }
 
 #trace-rail {
-    width: 38;
-    min-width: 34;
-    max-width: 44;
+    width: 28;
+    min-width: 26;
+    max-width: 32;
     height: 1fr;
     background: #080c10;
     border-left: solid #2d3a4f;
@@ -162,7 +157,7 @@ Footer {
 }
 
 #top-bar {
-    height: 3;
+    height: 2;
     background: #131a24;
     border: solid #2d3a4f;
     padding: 0 2;
@@ -170,7 +165,8 @@ Footer {
 }
 
 #token-bar {
-    height: 2;
+    height: 1;
+    display: none;
     background: #0d1520;
     border: solid #3d5a80;
     padding: 0 2;
@@ -189,9 +185,9 @@ Footer {
 
 #thinking-row {
     display: none;
-    height: 7;
-    min-height: 7;
-    max-height: 9;
+    height: 2;
+    min-height: 2;
+    max-height: 3;
     border: solid #6cb6ff;
     background: #0d1520;
     margin-bottom: 1;
@@ -203,8 +199,8 @@ Footer {
 }
 
 #think-spinner {
-    width: 5;
-    min-width: 5;
+    width: 3;
+    min-width: 3;
     height: 100%;
     content-align: center middle;
 }
@@ -235,7 +231,8 @@ Footer {
 
 #tracker-panel {
     height: auto;
-    max-height: 5;
+    max-height: 3;
+    display: none;
     background: #0d1520;
     border: solid #2d3a4f;
     padding: 0 2;

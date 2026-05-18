@@ -44,6 +44,7 @@ from src.repl.chat_log import ChatRichLog
 from src.repl.clipboard_util import copy_to_clipboard, save_copy_fallback
 from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP
 from src.repl.session_bridge import SessionBridge
+from src.repl.markup_safe import escape_markup
 from src.repl.thinking_anim import thinking_panel_markup, thinking_trace_line
 from src.repl.tips import CE_TIPS
 from src.repl.trace_viz import trace_lane_markup
@@ -313,6 +314,8 @@ class CognitionReplApp(App):
         self._typing_full = ""
         self._typing_pos = 0
         self._thinking_min_until = 0.0
+        self._last_activity = "Ready"
+        self._token_refresh_timer: Timer | None = None
 
     def _build_agent(self):
         try:
@@ -328,15 +331,31 @@ class CognitionReplApp(App):
 
     def _on_agent_activity(self, msg: str) -> None:
         try:
-            self.call_from_thread(self._log_work, msg)
+            self.call_from_thread(self._apply_activity, msg)
         except RuntimeError:
-            self._log_work(msg)
+            self._apply_activity(msg)
+
+    def _apply_activity(self, msg: str) -> None:
+        self._last_activity = msg
+        self._log_work(msg)
+        if self._chat_busy:
+            try:
+                tick = self._thinking_tick
+                self.query_one("#chat-thinking", Static).update(
+                    thinking_panel_markup(tick, status=msg)
+                )
+                self.query_one("#thinking-bar", Static).update(
+                    thinking_trace_line(tick, status=msg)
+                )
+            except Exception:
+                pass
 
     def _on_agent_tokens(self, usage: dict[str, int]) -> None:
         try:
             self.call_from_thread(self._apply_token_usage, usage)
         except RuntimeError:
             self._apply_token_usage(usage)
+        self._refresh_token_bar()
 
     def _apply_token_usage(self, usage: dict[str, int]) -> None:
         self._live_tokens = {
@@ -412,7 +431,6 @@ class CognitionReplApp(App):
                     yield Static(COMMAND_HINTS, id="command-hints", markup=True)
             with Vertical(id="chat-column"):
                 yield Static(self._top_bar_text(), id="top-bar", markup=True)
-                yield Static(self._token_bar_text(), id="token-bar", markup=True)
                 yield Static(self._tracker_text(), id="tracker-panel", markup=True)
                 with Horizontal(id="thinking-row"):
                     yield LoadingIndicator(id="think-spinner")
@@ -469,6 +487,30 @@ class CognitionReplApp(App):
 
         return format_status_detail(self.bridge.ctx)
 
+    def _session_token_totals(self) -> dict[str, int]:
+        t = dict(self._live_tokens)
+        if self._agent:
+            t = {
+                "input": int(self._agent.session_tokens.get("input", 0)),
+                "output": int(self._agent.session_tokens.get("output", 0)),
+                "total": int(self._agent.session_tokens.get("total", 0)),
+                "last_turn": int(self._agent.session_tokens.get("last_turn", 0)),
+            }
+        if self.bridge.ctx.is_initialized():
+            try:
+                op = self.bridge.ctx.active_operational_memory()
+                totals = op.get_session_summary().get("tokens") or {}
+                if int(totals.get("total", 0)) >= t["total"]:
+                    t = {
+                        "input": int(totals.get("input", 0)),
+                        "output": int(totals.get("output", 0)),
+                        "total": int(totals.get("total", 0)),
+                        "last_turn": t.get("last_turn", 0),
+                    }
+            except Exception:
+                pass
+        return t
+
     def _top_bar_text(self) -> str:
         from src.cli.model_picker import resolve_model_id
 
@@ -477,43 +519,17 @@ class CognitionReplApp(App):
         mid = resolve_model_id(raw, reg) or raw
         meta = reg.get_model(mid) or {}
         name = meta.get("display_name") or mid
-        st = self.bridge.status_line()
-        return (
-            f"[bold #6cb6ff]{name}[/] [dim]({mid})[/]  "
-            f"[dim]│[/]  {st}"
+        t = self._session_token_totals()
+        last = f" +{t['last_turn']:,} last" if t["last_turn"] else ""
+        tok = (
+            f"[bold #e3b341]⚡[/] [white]{t['total']:,}[/] "
+            f"[dim](↑{t['input']:,} ↓{t['output']:,}{last})[/]"
         )
-
-    def _token_bar_text(self) -> str:
-        t = self._live_tokens
-        if self.bridge.ctx.is_initialized():
-            try:
-                op = self.bridge.ctx.active_operational_memory()
-                totals = op.get_session_summary().get("tokens") or {}
-                if totals.get("total", 0) > t["total"]:
-                    t = {
-                        "input": totals["input"],
-                        "output": totals["output"],
-                        "total": totals["total"],
-                        "last_turn": t.get("last_turn", 0),
-                    }
-            except Exception:
-                pass
-        if t["total"] <= 0 and t["last_turn"] <= 0:
-            return (
-                "[dim]Tokens[/]  [white]0[/]  "
-                "[dim]↑ in · ↓ out · updates each model turn[/]"
-            )
-        return (
-            f"[bold #e3b341]⚡ Tokens[/]  "
-            f"[white]{t['total']:,}[/] total  "
-            f"[dim]↑[/][#79c0ff]{t['input']:,}[/] "
-            f"[dim]↓[/][#a5d6ff]{t['output']:,}[/]  "
-            f"[dim]last turn[/] [bold]+{t['last_turn']:,}[/]"
-        )
+        return f"[bold #6cb6ff]{name}[/] [dim]│[/] {tok}"
 
     def _refresh_token_bar(self) -> None:
         try:
-            self.query_one("#token-bar", Static).update(self._token_bar_text())
+            self.query_one("#top-bar", Static).update(self._top_bar_text())
         except Exception:
             pass
 
@@ -584,7 +600,7 @@ class CognitionReplApp(App):
     def _log_user(self, text: str) -> None:
         self._last_user_prompt = text
         preview = text if len(text) <= 500 else text[:497] + "…"
-        body = preview.replace("\n", "\n[bold white]  [/bold white]")
+        body = escape_markup(preview).replace("\n", "\n[bold white]  [/bold white]")
         self.query_one("#prompt-display", Static).update(
             f"[bold #6cb6ff]You[/]  {body}"
         )
@@ -596,7 +612,7 @@ class CognitionReplApp(App):
 
     def _log_assistant(self, text: str) -> None:
         self._last_assistant_plain = text
-        body = text.replace("\n", "\n[#79c0ff]│ [/#79c0ff]")
+        body = escape_markup(text).replace("\n", "\n[#79c0ff]│ [/#79c0ff]")
         self._log(
             "\n[bold #79c0ff]┏━ Assistant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
             f"[#79c0ff]│ [/#79c0ff]{body}\n"
@@ -631,12 +647,11 @@ class CognitionReplApp(App):
         end = min(self._typing_pos + step, len(self._typing_full))
         self._typing_pos = end
         partial = self._typing_full[:end]
-        display = partial.replace("\n", " ")
-        if len(display) > 400:
-            display = "…" + display[-400:]
+        display = escape_markup(partial.replace("\n", " "))
+        if len(display) > 200:
+            display = "…" + display[-200:]
         self.query_one("#chat-thinking", Static).update(
-            f"[bold #79c0ff]▌ Assistant[/] [italic]typing…[/]\n"
-            f"[#79c0ff]{display}[/][bold #79c0ff]▌[/]"
+            f"[bold #79c0ff]▌[/] [italic]typing…[/] [#79c0ff]{display}[/][bold #79c0ff]▌[/]"
         )
         self.query_one("#chat-scroll", VerticalScroll).scroll_end(animate=False)
 
@@ -699,10 +714,13 @@ class CognitionReplApp(App):
 
     def _tick_thinking(self) -> None:
         self._thinking_tick += 1
-        panel = thinking_panel_markup(self._thinking_tick)
-        trace = thinking_trace_line(self._thinking_tick)
-        self.query_one("#chat-thinking", Static).update(panel)
-        self.query_one("#thinking-bar", Static).update(trace)
+        status = self._last_activity
+        self.query_one("#chat-thinking", Static).update(
+            thinking_panel_markup(self._thinking_tick, status=status)
+        )
+        self.query_one("#thinking-bar", Static).update(
+            thinking_trace_line(self._thinking_tick, status=status)
+        )
 
     def _hide_thinking_ui(self) -> None:
         if self._thinking_timer is not None:
@@ -769,6 +787,8 @@ class CognitionReplApp(App):
         self._active_model_id = str(self.bridge.ctx.config.get("default_model", ""))
         self._sync_model_select()
         self._tips_timer = self.set_interval(12.0, self._tick_tip)
+        self._token_refresh_timer = self.set_interval(1.5, self._refresh_token_bar)
+        self._refresh_token_bar()
         log = self.query_one("#log", RichLog)
         log.write("[bold #6cb6ff]Cognition Engine[/] ready")
         log.write(

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.repl.markup_safe import escape_markup
+
 _TRACE_RULES: list[tuple[str, str, str]] = [
     ("shield", "SHIELD", "#d2a8ff"),
     ("tool", "TOOL", "#ffa657"),
@@ -28,7 +30,7 @@ def trace_lane_markup(text: str) -> str:
             lane = name
             color = col
             break
-    safe = text.replace("[", "\\[")
+    safe = escape_markup(text)
     return (
         f"[dim]╭─[/][bold {color}] {lane} [/][dim]────────────────[/]\n"
         f"[white]  {safe}[/]\n"

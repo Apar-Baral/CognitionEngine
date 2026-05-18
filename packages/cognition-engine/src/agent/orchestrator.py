@@ -139,6 +139,10 @@ class AgentOrchestrator:
         text = parsed.get("content", "") or ""
         usage = self.parser.extract_usage(raw, model)
         self._log_tokens(usage)
+        inp = int(usage.get("input_tokens", 0))
+        out = int(usage.get("output_tokens", 0))
+        if inp or out:
+            self._activity(f"Tokens this call: ↑{inp:,} in · ↓{out:,} out · Σ{inp + out:,}")
 
         tool_result = self._try_tool(text)
         if tool_result is not None:
@@ -161,21 +165,28 @@ class AgentOrchestrator:
             return None
         name = data["tool"]
         args = data.get("args") or {}
-        self._activity(f"Running tool: {name}…")
         if name == "read_file":
-            return self.tools.read_file(str(args.get("path", "")))
+            path = str(args.get("path", ""))
+            self._activity(f"Reading file: {path}")
+            return self.tools.read_file(path)
         if name == "write_file":
+            path = str(args.get("path", ""))
+            self._activity(f"Editing file: {path}")
             self._activity("Shield: validating Python before write…")
             return self.tools.write_file(
-                str(args.get("path", "")),
+                path,
                 str(args.get("content", "")),
                 self.ctx,
             )
         if name == "run_command":
-            return self.tools.run_command(str(args.get("cmd", "")))
+            cmd = str(args.get("cmd", ""))
+            preview = cmd if len(cmd) <= 120 else cmd[:117] + "…"
+            self._activity(f"Executing shell: {preview}")
+            return self.tools.run_command(cmd)
         if name == "suggest_next":
             self._activity("Computing next-step recommendations…")
             return self.tools.suggest_next(self.ctx)
+        self._activity(f"Running tool: {name}…")
         return f"Unknown tool: {name}"
 
     def _emit_tokens(self, usage: dict[str, int]) -> None:
