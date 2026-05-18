@@ -34,7 +34,7 @@ from src.cli.setup_summary import (
     load_last_setup,
     load_project_setup_summary,
 )
-from src.repl.repl_theme import CE_APP_CSS
+from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP
 from src.repl.session_bridge import SessionBridge
 
 COMMAND_BUTTONS: list[tuple[str, str, str]] = [
@@ -296,20 +296,26 @@ class CognitionReplApp(App):
         model_value = self._model_select_value(model_options)
         yield Header(show_clock=True)
         with Horizontal(id="workspace"):
-            with Vertical(id="left-rail"):
-                yield Static("MODEL", classes="rail-section-title")
-                yield Select(
-                    model_options,
-                    id="model-select",
-                    prompt="Select model…",
-                    value=model_value,
-                )
-                yield Static(self._setup_panel_text(), id="setup-panel", markup=True)
-                yield Static("ACTIONS", classes="rail-section-title")
-                with Vertical(id="command-buttons"):
-                    for bid, label, variant in COMMAND_BUTTONS:
-                        yield Button(label, id=bid, classes="-primary" if variant == "primary" else "")
-                yield Static(COMMAND_HINTS, id="command-hints", markup=True)
+            with VerticalScroll(id="left-rail", can_focus=True):
+                with Vertical(id="left-rail-inner"):
+                    yield Static(CE_BRAND_MARKUP, id="ce-brand", markup=True)
+                    yield Static("MODEL", classes="rail-section-title")
+                    yield Select(
+                        model_options,
+                        id="model-select",
+                        prompt="Select model…",
+                        value=model_value,
+                    )
+                    yield Static(self._setup_panel_text(), id="setup-panel", markup=True)
+                    yield Static("ACTIONS", classes="rail-section-title")
+                    with Vertical(id="command-buttons"):
+                        for bid, label, variant in COMMAND_BUTTONS:
+                            yield Button(
+                                label,
+                                id=bid,
+                                classes="-primary" if variant == "primary" else "",
+                            )
+                    yield Static(COMMAND_HINTS, id="command-hints", markup=True)
             with Vertical(id="main-column"):
                 yield Static(self._top_bar_text(), id="top-bar", markup=True)
                 with VerticalScroll(id="chat-scroll"):

@@ -9,7 +9,13 @@ import logging
 from typing import Any
 from urllib.parse import urlencode
 
+from src.models.dynamic_registry import DynamicRegistry
+
 logger = logging.getLogger(__name__)
+
+
+def _api_model(model: dict[str, Any]) -> str:
+    return DynamicRegistry.api_model_name(model)
 
 
 class RequestBuilder:
@@ -70,7 +76,7 @@ class RequestBuilder:
             model["auth_header"]: api_key,
         }
         body: dict[str, Any] = {
-            "model": model["id"],
+            "model": _api_model(model),
             "max_tokens": min(
                 int(unified.get("max_tokens", 4096)),
                 int(model.get("max_output", 4096)),
@@ -118,7 +124,7 @@ class RequestBuilder:
         messages.extend(unified.get("messages") or [])
 
         body: dict[str, Any] = {
-            "model": model["id"],
+            "model": _api_model(model),
             "messages": messages,
             "max_tokens": min(
                 int(unified.get("max_tokens", 4096)),
@@ -146,7 +152,7 @@ class RequestBuilder:
     def _build_google(
         self, unified: dict[str, Any], model: dict[str, Any], api_key: str
     ) -> tuple[str, dict[str, str], dict[str, Any]]:
-        endpoint = model["endpoint"].replace("{model}", model["id"])
+        endpoint = model["endpoint"].replace("{model}", _api_model(model))
         url = f"{model['api_base'].rstrip('/')}{endpoint}?{urlencode({'key': api_key})}"
         headers = {"content-type": "application/json"}
         contents = []
@@ -190,7 +196,7 @@ class RequestBuilder:
             messages.append({"role": "system", "content": unified["system_prompt"]})
         messages.extend(unified.get("messages") or [])
         body = {
-            "model": model["id"],
+            "model": _api_model(model),
             "messages": messages,
             "stream": bool(unified.get("stream")),
         }

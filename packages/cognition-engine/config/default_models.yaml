@@ -140,7 +140,8 @@ models:
 
   - id: deepseek-r4-pro
     provider: openai_compatible
-    display_name: DeepSeek R4 Pro
+    display_name: DeepSeek V4 Pro
+    api_model: deepseek-v4-pro
     api_base: https://api.deepseek.com
     endpoint: /v1/chat/completions
     auth_header: Authorization

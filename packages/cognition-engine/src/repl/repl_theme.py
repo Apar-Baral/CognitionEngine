@@ -1,5 +1,10 @@
 """Cognition Engine REPL visual theme."""
 
+CE_BRAND_MARKUP = """[bold #6cb6ff]    ◈◈◈[/]
+[bold white]COGNITION[/]
+[bold #58a6ff]ENGINE[/]
+[dim italic]By Apar Baral[/]"""
+
 CE_APP_CSS = """
 Screen {
     background: #0a0e14;
@@ -25,9 +30,26 @@ Footer {
     width: 34;
     min-width: 30;
     max-width: 38;
+    height: 1fr;
     background: #111820;
     border-right: solid #2d3a4f;
+    scrollbar-background: #111820;
+    scrollbar-color: #3d5a80;
+    scrollbar-gutter: stable;
+}
+
+#left-rail-inner {
+    width: 100%;
+    height: auto;
     padding: 0 1;
+}
+
+#ce-brand {
+    text-align: center;
+    padding: 1 0;
+    margin-bottom: 1;
+    border-bottom: solid #2d3a4f;
+    background: #0d1520;
 }
 
 .rail-section-title {

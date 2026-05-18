@@ -34,3 +34,16 @@ def test_resolve_model_id_by_display_name():
 def test_resolve_model_id_invalid():
     reg = DynamicRegistry(ensure_models_yaml())
     assert resolve_model_id("not-a-real-model-xyz", reg) is None
+
+
+def test_deepseek_r4_pro_api_model_name():
+    reg = DynamicRegistry(ensure_models_yaml())
+    model = reg.get_model("deepseek-r4-pro")
+    assert model is not None
+    assert DynamicRegistry.api_model_name(model) == "deepseek-v4-pro"
+    from src.models.request_builder import RequestBuilder
+
+    builder = RequestBuilder()
+    unified = {"messages": [{"role": "user", "content": "hi"}], "max_tokens": 16}
+    _, _, body = builder.build_request(unified, model, api_key="sk-test")
+    assert body["model"] == "deepseek-v4-pro"

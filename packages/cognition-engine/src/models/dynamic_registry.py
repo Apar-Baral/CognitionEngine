@@ -25,6 +25,11 @@ KNOWN_TIERS = frozenset({"premium", "standard", "economy"})
 KNOWN_PROVIDERS = frozenset(
     {"anthropic", "openai", "openai_compatible", "deepseek", "google", "openrouter", "ollama", "custom"}
 )
+# Registry id → upstream API model name (when they differ).
+_API_MODEL_DEFAULTS: dict[str, str] = {
+    "deepseek-r4-pro": "deepseek-v4-pro",
+}
+
 REQUIRED_FIELDS = (
     "id",
     "provider",
@@ -96,7 +101,12 @@ class DynamicRegistry:
             if errors:
                 logger.warning("Skipping model %s: %s", item.get("id"), "; ".join(errors))
                 continue
-            loaded[str(item["id"])] = dict(item)
+            mid = str(item["id"])
+            model = dict(item)
+            loaded[mid] = model
+        for mid, api_name in _API_MODEL_DEFAULTS.items():
+            if mid in loaded and not loaded[mid].get("api_model"):
+                loaded[mid]["api_model"] = api_name
         self._models = loaded
         logger.info("Loaded %d models from %s", len(loaded), self.config_path)
         return len(loaded)
@@ -122,6 +132,11 @@ class DynamicRegistry:
     def get_model(self, model_id: str) -> dict[str, Any] | None:
         m = self._models.get(model_id)
         return dict(m) if m else None
+
+    @staticmethod
+    def api_model_name(model: dict[str, Any]) -> str:
+        """Name sent to the provider API (may differ from registry id)."""
+        return str(model.get("api_model") or model.get("id") or "")
 
     def list_by_provider(self, provider: str) -> list[dict[str, Any]]:
         return [dict(m) for m in self._models.values() if m.get("provider") == provider]
