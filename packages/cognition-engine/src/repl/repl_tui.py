@@ -69,8 +69,7 @@ COMMAND_BUTTONS: list[tuple[str, str, str]] = [
 ]
 
 COMMAND_HINTS = (
-    "[dim]Model: top bar dropdown · Ctrl+M search · "
-    "Copy: drag in terminal (like Kali) · Ctrl+Shift+C[/]"
+    "[dim]Model: top strip · Ctrl+M · PgUp/Dn scroll · Ctrl+Shift+C copy[/]"
 )
 
 
@@ -551,16 +550,19 @@ class CognitionReplApp(App):
                             yield Button(label, id=bid, classes=classes)
                     yield Static(COMMAND_HINTS, id="command-hints", markup=True)
             with Vertical(id="chat-column"):
-                with Horizontal(id="model-bar"):
-                    yield Static("Model", id="model-bar-label")
-                    yield Static(self._model_display_text(), id="model-current", markup=True)
+                with Horizontal(id="header-strip"):
+                    yield Static("Model", id="header-model-label")
                     yield Select(
                         model_options,
                         id="model-select",
-                        prompt="Change…",
+                        prompt="Select model…",
                         value=model_value,
                     )
-                yield Static(self._status_bar_text(), id="status-bar", markup=True)
+                    yield Static(
+                        self._header_meta_text(),
+                        id="header-meta",
+                        markup=True,
+                    )
                 with VerticalScroll(id="chat-scroll", can_focus=True):
                     yield ChatRichLog(
                         id="log",
@@ -580,7 +582,7 @@ class CognitionReplApp(App):
                 with Horizontal(id="composer"):
                     yield Static("❯", id="prompt-glyph")
                     yield Input(
-                        placeholder="Ask anything — slash commands optional",
+                        placeholder="Message Cognition Engine…",
                         id="input",
                     )
             with Vertical(id="trace-rail"):
@@ -650,17 +652,13 @@ class CognitionReplApp(App):
         name = str(meta.get("display_name") or mid)
         return f"[bold white]{name}[/] [dim]({mid})[/]"
 
-    def _status_bar_text(self) -> str:
+    def _header_meta_text(self) -> str:
         proj = self.bridge.root.name or str(self.bridge.root)
         init = "[#3fb950]●[/]" if self.bridge.ctx.is_initialized() else "[#768390]○[/]"
         t = self._session_token_totals()
-        tok = (
-            f"[#e3b341]⚡[/] {t['total']:,} tok "
-            f"[dim](↑{t['input']:,} ↓{t['output']:,})[/]"
-        )
         return (
-            f"{init} [bold]{proj}[/]  {tok}  "
-            f"[dim]PgUp/Dn scroll · Ctrl+Shift+C copy focused pane[/]"
+            f"{init} [white]{proj}[/]  "
+            f"[#e3b341]{t['total']:,}[/] tok [dim]↑{t['input']:,} ↓{t['output']:,}[/]"
         )
 
     def _token_bar_text(self) -> str:
@@ -675,7 +673,7 @@ class CognitionReplApp(App):
 
     def _refresh_token_bar(self) -> None:
         try:
-            self.query_one("#status-bar", Static).update(self._status_bar_text())
+            self.query_one("#header-meta", Static).update(self._header_meta_text())
         except Exception:
             pass
 
@@ -723,8 +721,8 @@ class CognitionReplApp(App):
 
     def _refresh_chrome(self, *, sync_select: bool = False) -> None:
         try:
-            self.query_one("#model-current", Static).update(self._model_display_text())
-            self.query_one("#status-bar", Static).update(self._status_bar_text())
+            self.query_one("#header-meta", Static).update(self._header_meta_text())
+            self._sync_model_select()
             self.query_one("#sidebar-status", Static).update(
                 format_left_rail(
                     project_root=self.bridge.root,
@@ -869,11 +867,20 @@ class CognitionReplApp(App):
         if busy:
             composer.add_class("-busy")
             chat_input.disabled = True
-            chat_input.placeholder = "Waiting for model… (Esc to cancel)"
+            chat_input.placeholder = "Working… Esc to cancel"
         else:
             composer.remove_class("-busy")
             chat_input.disabled = False
             chat_input.placeholder = "Ask anything — slash commands optional"
+
+    def _collapse_agent_progress(self) -> None:
+        try:
+            box = self.query_one("#thinking-box", Vertical)
+            box.remove_class("visible")
+            self.query_one("#task-list", Static).update("")
+            self.query_one("#thinking-detail", Static).update("")
+        except Exception:
+            pass
 
     def _start_thinking(self) -> None:
         self._thinking_tick = 0
@@ -896,13 +903,7 @@ class CognitionReplApp(App):
         if self._thinking_timer is not None:
             self._thinking_timer.stop()
             self._thinking_timer = None
-        try:
-            box = self.query_one("#thinking-box", Vertical)
-            box.remove_class("visible")
-            self.query_one("#thinking-detail", Static).update("")
-            self.query_one("#task-list", Static).update("")
-        except Exception:
-            pass
+        self._collapse_agent_progress()
         if not self._typing_timer:
             self._clear_chat_thinking()
 
@@ -960,12 +961,12 @@ class CognitionReplApp(App):
         self._tips_timer = self.set_interval(12.0, self._tick_tip)
         self._token_refresh_timer = self.set_interval(1.5, self._refresh_token_bar)
         try:
-            self.query_one("#status-bar", Static).update(self._status_bar_text())
+            self.query_one("#header-meta", Static).update(self._header_meta_text())
         except Exception:
             pass
         try:
             self.query_one("#prompt-display", Static).add_class("hidden")
-            self.query_one("#thinking-box", Vertical).remove_class("visible")
+            self._collapse_agent_progress()
         except Exception:
             pass
         log = self.query_one("#log", ChatRichLog)

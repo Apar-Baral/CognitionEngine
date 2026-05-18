@@ -102,93 +102,86 @@ Footer {
     height: 1fr;
 }
 
-#model-bar {
-    height: auto;
-    min-height: 4;
-    max-height: 5;
+/* ── Area 1: single model + project header (no duplicate boxes) ── */
+#header-strip {
+    height: 3;
+    min-height: 3;
+    max-height: 3;
     background: #161b22;
-    border: solid #58a6ff;
+    border: solid #388bfd;
     padding: 0 1;
     margin: 0 0 1 0;
 }
 
-#model-bar-label {
-    width: 8;
-    min-width: 8;
+#header-model-label {
+    width: 7;
+    min-width: 7;
     color: #58a6ff;
     text-style: bold;
     content-align: left middle;
 }
 
-#model-current {
+#header-strip #model-select {
     width: 1fr;
-    min-width: 12;
-    color: #ffffff;
-    text-style: bold;
-    content-align: left middle;
-    padding: 0 1;
-}
-
-#model-bar #model-select {
-    width: 22;
-    min-width: 18;
-    max-width: 28;
-    border: solid #6cb6ff;
+    min-width: 16;
+    max-width: 42;
+    border: solid #388bfd;
     background: #0d1117;
-    margin: 0 1 0 0;
+    margin: 0 1;
+    color: #ffffff;
 }
 
-#status-bar {
-    height: 2;
-    min-height: 2;
-    background: #131a24;
-    border: solid #2d3a4f;
-    padding: 0 2;
+#header-strip #model-select:focus {
+    border: solid #79c0ff;
+}
+
+#header-meta {
+    width: auto;
+    min-width: 14;
+    max-width: 50%;
     color: #adbac7;
-    margin: 0 0 1 0;
+    content-align: right middle;
+    text-align: right;
+    padding: 0 1;
 }
 
-#prompt-display.hidden {
-    display: none;
-}
-
-#prompt-display {
-    height: auto;
-    max-height: 3;
-    padding: 0 2;
-    margin: 0 0 1 0;
-    background: transparent;
+/* ── Area 2: chat fills space; progress strip hidden until agent runs ── */
+#chat-scroll {
+    height: 1fr;
+    min-height: 10;
     border: none;
-    color: #8b949e;
+    background: #070b10;
+    scrollbar-background: #070b10;
+    scrollbar-color: #484f58 #070b10;
+    margin: 0;
 }
 
-#tips-bar {
-    height: 2;
-    min-height: 2;
-    background: #0a0e14;
-    border-top: solid #2d3a4f;
-    padding: 0 1;
-    color: #768390;
-}
-
-#task-list {
-    height: auto;
-    max-height: 8;
-    padding: 0 1;
+#log {
+    padding: 1 2;
+    width: 100%;
 }
 
 #thinking-box {
     display: none;
-    height: auto;
-    max-height: 10;
-    border: solid #6cb6ff;
-    background: #0d1520;
-    margin: 0 0 1 0;
-    padding: 0 1;
+    height: 0;
+    min-height: 0;
+    max-height: 0;
+    overflow: hidden;
+    border: none;
+    margin: 0;
+    padding: 0;
 }
 
 #thinking-box.visible {
     display: block;
+    height: auto;
+    min-height: 0;
+    max-height: 9;
+    overflow: hidden auto;
+    border: solid #388bfd;
+    background: #0d1117;
+    margin: 0 0 1 0;
+    padding: 0 1;
 }
 
 #thinking-head {
@@ -205,9 +198,77 @@ Footer {
     display: none;
 }
 
+#task-list {
+    height: auto;
+    max-height: 5;
+    padding: 0;
+}
+
 #thinking-detail {
     height: auto;
+    max-height: 3;
     color: #6cb6ff;
+    padding: 0;
+}
+
+#prompt-display.hidden {
+    display: none;
+    height: 0;
+    margin: 0;
+    padding: 0;
+}
+
+#prompt-display {
+    height: auto;
+    max-height: 2;
+    padding: 0 2;
+    margin: 0;
+    background: transparent;
+    border: none;
+    color: #8b949e;
+}
+
+/* ── Area 3: slim prompt dock ── */
+#composer {
+    height: 3;
+    min-height: 3;
+    max-height: 3;
+    border-top: solid #30363d;
+    background: #010409;
+    padding: 0 1;
+    margin: 0;
+}
+
+#composer.-busy {
+    border-top: solid #e3b341;
+}
+
+#composer.-busy #input {
+    opacity: 0.6;
+}
+
+#prompt-glyph {
+    width: 2;
+    min-width: 2;
+    color: #58a6ff;
+    text-style: bold;
+    content-align: center middle;
+}
+
+#input {
+    width: 1fr;
+    height: 1;
+    min-height: 1;
+    max-height: 1;
+    border: none;
+    background: transparent;
+    padding: 0 1;
+    color: #e6edf3;
+}
+
+#input:focus {
+    border: none;
+    background: #0d1117;
 }
 
 #trace-rail {
@@ -222,14 +283,14 @@ Footer {
 
 #trace-hint {
     height: auto;
-    max-height: 3;
+    max-height: 2;
     color: #768390;
     padding: 0 0 1 0;
 }
 
 #activity-scroll {
     height: 1fr;
-    min-height: 6;
+    min-height: 8;
     border: solid #2d3a4f;
     background: #0a0e14;
     scrollbar-background: #0a0e14;
@@ -241,47 +302,17 @@ Footer {
     padding: 0 1;
 }
 
-#chat-scroll {
-    height: 1fr;
-    min-height: 8;
-    border: solid #2d3a4f;
-    background: #070b10;
-    scrollbar-background: #070b10;
-    scrollbar-color: #484f58 #070b10;
+#log, #activity-log, #thinking-detail {
+    text-style: none;
 }
 
-#log {
-    padding: 1 2;
-    width: 100%;
-}
-
-#composer {
-    height: auto;
-    min-height: 3;
-    max-height: 4;
+#tips-bar {
+    height: 2;
+    min-height: 2;
+    background: #0a0e14;
     border-top: solid #2d3a4f;
-    padding: 1 0 0 0;
-}
-
-#composer.-busy #input {
-    opacity: 0.55;
-}
-
-#prompt-glyph {
-    width: 3;
-    color: #6cb6ff;
-    text-style: bold;
-}
-
-#input {
-    width: 1fr;
-    min-height: 1;
-    border: solid #3d5a80;
-    background: #0d1520;
-}
-
-#input:focus {
-    border: solid #6cb6ff;
+    padding: 0 1;
+    color: #768390;
 }
 
 ModelPickerScreen {
