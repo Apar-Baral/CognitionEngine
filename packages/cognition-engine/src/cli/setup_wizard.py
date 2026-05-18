@@ -34,7 +34,12 @@ def global_config_template() -> dict[str, Any]:
         "shield_sensitivity": "medium",
         "proxy": {"enabled": False, "host": "127.0.0.1", "port": 8787},
         "api_keys": {},
-        "git": {"auto_commit": False, "auto_commit_message_prefix": "ce:"},
+        "git": {
+            "auto_commit": True,
+            "auto_commit_message_prefix": "ce:",
+            "user_name": "",
+            "user_email": "",
+        },
     }
 
 
@@ -42,7 +47,12 @@ def project_config_template() -> dict[str, Any]:
     return {
         "default_model": "claude-sonnet-4-20250514",
         "shield_sensitivity": "medium",
-        "git": {"auto_commit": False, "auto_commit_message_prefix": "ce:"},
+        "git": {
+            "auto_commit": True,
+            "auto_commit_message_prefix": "ce:",
+            "user_name": "",
+            "user_email": "",
+        },
     }
 
 

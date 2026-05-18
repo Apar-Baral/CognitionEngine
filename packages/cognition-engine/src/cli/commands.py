@@ -460,7 +460,7 @@ def cmd_doctor() -> None:
 
     pkg_root = Path(src.__file__).resolve().parent
     checks: list[tuple[str, bool]] = [
-        ("Package version >= 0.3.20", __version__ >= "0.3.20"),
+        ("Package version >= 0.3.21", __version__ >= "0.3.21"),
         ("session_tokens.py present", (pkg_root / "memory" / "session_tokens.py").is_file()),
         (
             "Token dict normalization works",

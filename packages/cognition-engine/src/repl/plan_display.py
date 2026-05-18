@@ -55,6 +55,61 @@ def format_plan_markup(
     return "\n".join(lines)
 
 
+def format_plan_plain(
+    phases: list[dict[str, Any]],
+    *,
+    goal: str = "",
+    overall_completion: float = 0.0,
+    project_name: str = "Project",
+) -> str:
+    """Plain-text plan (always visible in RichLog)."""
+    lines = [
+        f"MASTER PLAN — {project_name}",
+        f"{len(phases)} phases · {overall_completion:.0f}% implementation complete",
+    ]
+    if goal.strip():
+        lines.append(f"Goal: {goal.strip()[:300]}")
+    lines.append("")
+    for i, phase in enumerate(phases, 1):
+        pid = phase.get("id", f"PHASE_{i:02d}")
+        name = phase.get("name", "")
+        status = phase.get("status", "?")
+        score = int(phase.get("completion_score", 0))
+        mark = " <-- current" if status == PhaseStatus.IN_PROGRESS.value else ""
+        lines.append(f"  {pid}  {name}  ({status}, {score}%){mark}")
+        desc = (phase.get("description") or "")[:90]
+        if desc:
+            lines.append(f"      {desc}")
+    return "\n".join(lines)
+
+
+def format_shield_detail(ctx: Any) -> str:
+    """How hallucination shield works in this project."""
+    from src.cli.context import ProjectContext
+
+    if not isinstance(ctx, ProjectContext):
+        return "Shield: project not loaded"
+    sens = ctx.config.get("shield_sensitivity", "medium")
+    hall = 0
+    if ctx.is_initialized():
+        hall = int(ctx.query.refresh().get("project", {}).get("total_hallucinations_caught", 0))
+    return (
+        "[bold #f85149]Hallucination Shield[/] (core CE feature)\n\n"
+        "[bold]What it checks[/]\n"
+        "  · Invented Python imports (modules that do not exist)\n"
+        "  · Invented APIs / functions / wrong parameters\n"
+        "  · Static analysis vs project truth database\n\n"
+        "[bold]When it runs[/]\n"
+        "  · Agent [bold]write_file[/] on .py files (blocks bad code)\n"
+        "  · CLI: [bold]cognition-engine validate[/] <file>\n"
+        "  · Session [bold]/end[/] — logs caught issues to DNA\n\n"
+        f"[bold]Your project[/]  sensitivity=[cyan]{sens}[/]  "
+        f"total caught in DNA=[yellow]{hall}[/]\n\n"
+        "[dim]Not every chat line is scanned — shield targets code changes.[/]\n"
+        "[dim]Index codebase once: cognition-engine index[/]"
+    )
+
+
 def format_status_detail(ctx: Any) -> str:
     """Detailed progress + shield summary for /status and sidebar refresh."""
     from src.cli.context import ProjectContext

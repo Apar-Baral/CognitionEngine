@@ -119,7 +119,12 @@ def persist_setup_choices(
             "default_model": "claude-haiku-20240307",
             "shield_sensitivity": "medium",
             "api_keys": {},
-            "git": {"auto_commit": False, "auto_commit_message_prefix": "ce:"},
+            "git": {
+                "auto_commit": True,
+                "auto_commit_message_prefix": "ce:",
+                "user_name": "",
+                "user_email": "",
+            },
         }
 
     reg = DynamicRegistry(ensure_models_yaml())
@@ -132,6 +137,12 @@ def persist_setup_choices(
             file_keys.setdefault("openai", api_key.strip())
     data["api_keys"] = file_keys
     data["default_model"] = mid
+    git = data.setdefault("git", {})
+    git.setdefault("auto_commit", True)
+    if not git.get("user_name"):
+        git["user_name"] = os.environ.get("CE_GIT_USER_NAME", "Apar-Baral")
+    if not git.get("user_email"):
+        git["user_email"] = os.environ.get("CE_GIT_USER_EMAIL", "dedsecaparb@gmail.com")
     _save_global(data)
 
     root = (project_root or Path.cwd()).resolve()
@@ -146,7 +157,12 @@ def persist_setup_choices(
                 yaml.safe_dump(
                     {
                         "default_model": mid,
-                        "git": {"auto_commit": False, "auto_commit_message_prefix": "ce:"},
+                        "git": {
+                            "auto_commit": True,
+                            "auto_commit_message_prefix": "ce:",
+                            "user_name": git.get("user_name", ""),
+                            "user_email": git.get("user_email", ""),
+                        },
                     },
                     default_flow_style=False,
                 ),
@@ -188,7 +204,12 @@ def hermes_quick_setup(
             "default_model": "claude-haiku-20240307",
             "shield_sensitivity": "medium",
             "api_keys": {},
-            "git": {"auto_commit": False, "auto_commit_message_prefix": "ce:"},
+            "git": {
+                "auto_commit": True,
+                "auto_commit_message_prefix": "ce:",
+                "user_name": "",
+                "user_email": "",
+            },
         }
 
     keys = _merged_keys(data)
@@ -242,7 +263,12 @@ def hermes_quick_setup(
                 yaml.safe_dump(
                     {
                         "default_model": model_id,
-                        "git": {"auto_commit": False, "auto_commit_message_prefix": "ce:"},
+                        "git": {
+                "auto_commit": True,
+                "auto_commit_message_prefix": "ce:",
+                "user_name": "",
+                "user_email": "",
+            },
                     },
                     default_flow_style=False,
                 ),

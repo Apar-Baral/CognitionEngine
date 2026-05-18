@@ -2,7 +2,9 @@
 default_model: gpt-4o-mini
 shield_sensitivity: medium
 git:
-  auto_commit: false
+  auto_commit: true
   auto_commit_message_prefix: "ce:"
+  user_name: Apar-Baral
+  user_email: dedsecaparb@gmail.com
 repl:
   use_textual: true

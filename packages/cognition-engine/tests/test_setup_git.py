@@ -10,7 +10,7 @@ from src.core.config import Config
 
 
 def test_project_config_template_has_git():
-    assert project_config_template()["git"]["auto_commit"] is False
+    assert project_config_template()["git"]["auto_commit"] is True
 
 
 def test_write_gitignore(tmp_path: Path):

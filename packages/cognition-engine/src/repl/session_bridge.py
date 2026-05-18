@@ -69,6 +69,7 @@ class SessionBridge:
   /goal TEXT         Set project goal
   /plan [goal]       Generate + show master plan
   /showplan          Show saved plan in chat
+  /shield            Hallucination shield — how it works
   /start [task]      Start session + refresh bootstrap
   /end SUMMARY       End session (+ auto-commit if enabled)
   /status            Project progress
@@ -133,21 +134,33 @@ class SessionBridge:
         err = self.ensure_initialized()
         if err:
             return err
-        from src.repl.plan_display import format_plan_markup
+        from src.repl.plan_display import format_plan_markup, format_plan_plain
 
         dna = self.ctx.query.refresh()
         phases = dna.get("master_plan", {}).get("phase_sequence", [])
         if not phases:
-            return "No plan yet. Click [bold]Generate plan[/] or run /plan"
+            return "No plan yet. Set a goal (/goal …) then click Generate plan or /plan"
         goal = self.ctx.get_project_goal()
         overall = self.ctx.query.calculate_project_completion()
         name = dna.get("project", {}).get("name", self.root.name)
-        return format_plan_markup(
+        plain = format_plan_plain(
             phases,
             goal=goal,
             overall_completion=overall,
             project_name=str(name),
         )
+        rich = format_plan_markup(
+            phases,
+            goal=goal,
+            overall_completion=overall,
+            project_name=str(name),
+        )
+        return plain + "\n\n---\n\n" + rich
+
+    def cmd_shield(self) -> str:
+        from src.repl.plan_display import format_shield_detail
+
+        return format_shield_detail(self.ctx)
 
     def cmd_start(self, task: str = "") -> str:
         err = self.ensure_initialized()
@@ -212,13 +225,24 @@ class SessionBridge:
         if new_insights:
             lines.append(f"New insights: {len(new_insights)}")
         if should_auto_commit(self.ctx.config):
-            msg = auto_commit(self.root, summary, prefix=auto_commit_prefix(self.ctx.config))
+            from src.cli.git_helpers import git_author_from_config
+
+            author = git_author_from_config(self.ctx.config)
+            msg = auto_commit(
+                self.root,
+                summary,
+                prefix=auto_commit_prefix(self.ctx.config),
+                author=author,
+            )
             if msg:
                 lines.append(msg)
+            elif not author:
+                lines.append(
+                    "Git: auto_commit on but no git.user_name/email in ~/.cognition/config.yaml"
+                )
         else:
             lines.append(
-                "Git: CE did not commit (auto_commit is off). "
-                "Commit yourself: git add -A && git commit -m \"your message\""
+                "Git: auto_commit off — commit yourself: git add -A && git commit -m \"…\""
             )
         return "\n".join(lines)
 
@@ -355,6 +379,7 @@ class SessionBridge:
             "/goal": lambda: self.cmd_goal(arg),
             "/plan": lambda: self.cmd_plan(arg),
             "/showplan": lambda: self.cmd_show_plan(),
+            "/shield": lambda: self.cmd_shield(),
             "/start": lambda: self.cmd_start(arg),
             "/end": lambda: self.cmd_end(arg),
             "/status": lambda: self.cmd_status(),

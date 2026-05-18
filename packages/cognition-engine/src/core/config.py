@@ -34,7 +34,12 @@ SYSTEM_DEFAULTS: dict[str, Any] = {
     },
     "budgets": {st.value: budget for st, budget in DEFAULT_SESSION_BUDGETS.items()},
     "providers": {},
-    "git": {"auto_commit": False, "auto_commit_message_prefix": "ce:"},
+    "git": {
+        "auto_commit": True,
+        "auto_commit_message_prefix": "ce:",
+        "user_name": "",
+        "user_email": "",
+    },
 }
 
 ENV_PREFIX = "COGNITION_"

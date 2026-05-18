@@ -63,6 +63,32 @@ def git_init_project(
     return messages
 
 
+def git_author_from_config(config: Any) -> tuple[str, str] | None:
+    """Author for auto-commits (your identity, not CE)."""
+    import os
+
+    name = (
+        config.get("git.user_name")
+        or config.get("git.author_name")
+        or os.environ.get("CE_GIT_USER_NAME", "").strip()
+    )
+    email = (
+        config.get("git.user_email")
+        or config.get("git.author_email")
+        or os.environ.get("CE_GIT_USER_EMAIL", "").strip()
+    )
+    if name and email:
+        return str(name), str(email)
+    return None
+
+
+def _git_config_args(author: tuple[str, str] | None) -> list[str]:
+    if not author:
+        return []
+    name, email = author
+    return ["-c", f"user.name={name}", "-c", f"user.email={email}"]
+
+
 def auto_commit(
     root: Path,
     summary: str,
@@ -70,12 +96,14 @@ def auto_commit(
     prefix: str = "ce:",
     paths: list[str] | None = None,
     respect_gitignore: bool = True,
+    author: tuple[str, str] | None = None,
 ) -> str | None:
     """Stage and commit if repo is clean enough. Returns status message or None."""
     if not is_git_repo(root):
         return None
     root = root.resolve()
     message = f"{prefix} {summary}".strip()[:500]
+    git_cmd = ["git", *_git_config_args(author)]
     try:
         if paths:
             for p in paths:
@@ -92,15 +120,21 @@ def auto_commit(
         if not status.stdout.strip():
             return "Git: nothing to commit."
         subprocess.run(
-            ["git", "commit", "-m", message],
+            [*git_cmd, "commit", "-m", message],
             cwd=root,
             check=True,
             capture_output=True,
             text=True,
         )
-        return f"Git: committed — {message[:80]}"
+        who = f" as {author[0]} <{author[1]}>" if author else ""
+        return f"Git: committed{who} — {message[:72]}"
     except subprocess.CalledProcessError as exc:
         err = (exc.stderr or exc.stdout or str(exc)).strip()
+        if author is None and "user.name" in err.lower():
+            return (
+                "Git: commit skipped — set git.user_name and git.user_email in "
+                "~/.cognition/config.yaml (see profile.example.yaml)"
+            )
         return f"Git: commit skipped ({err[:120]})"
 
 

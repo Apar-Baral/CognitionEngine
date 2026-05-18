@@ -45,7 +45,8 @@ COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-model", "Change model", "primary"),
     ("btn-start", "Start session", "primary"),
     ("btn-plan", "Generate plan", "primary"),
-    ("btn-show-plan", "Show plan", ""),
+    ("btn-show-plan", "Show plan", "primary"),
+    ("btn-shield", "Shield info", ""),
     ("btn-status", "Track progress", ""),
     ("btn-end", "End session", ""),
     ("btn-commit", "Git hint", ""),
@@ -502,6 +503,33 @@ class CognitionReplApp(App):
     def _log_system(self, text: str) -> None:
         self._log(f"[dim]· {text}[/]")
 
+    def _display_plan(self, *, generate: bool = False) -> None:
+        """Show plan in main chat immediately (sync — reliable visibility)."""
+        if not self.bridge.ctx.is_initialized():
+            self._require_project("Show plan")
+            return
+        self._log_work("Loading master plan…")
+        try:
+            if generate:
+                goal = self.bridge.ctx.get_project_goal()
+                if not goal:
+                    self._log("[yellow]Set a goal first:[/] /goal Your project objective")
+                    return
+                text = self.bridge.cmd_plan("")
+            else:
+                text = self.bridge.cmd_show_plan()
+            if not text or "No plan yet" in text:
+                self._log_system(text or "No plan in DNA.")
+                return
+            self._log(
+                "\n[bold #3fb950]══════════════════════════════════════[/]\n"
+                f"{text}\n"
+                "[bold #3fb950]══════════════════════════════════════[/]\n"
+            )
+            self._refresh_chrome(sync_select=False)
+        except Exception as exc:
+            self._log_system(f"Plan error: {exc}")
+
     def _set_chat_busy(self, busy: bool) -> None:
         self._chat_busy = busy
         composer = self.query_one("#composer", Horizontal)
@@ -643,7 +671,9 @@ class CognitionReplApp(App):
         elif bid == "btn-plan":
             self._prompt_plan()
         elif bid == "btn-show-plan":
-            self._run_bridge(lambda: self.bridge.cmd_show_plan())
+            self._display_plan(generate=False)
+        elif bid == "btn-shield":
+            self._log(self.bridge.cmd_shield())
         elif bid == "btn-end":
             if self._require_project("End session"):
                 self.action_prompt_end()
@@ -742,9 +772,8 @@ class CognitionReplApp(App):
     def _prompt_plan(self) -> None:
         if not self._require_project("Generate plan"):
             return
-        goal = self.bridge.ctx.get_project_goal()
-        if goal:
-            self._run_bridge(lambda: self.bridge.cmd_plan(""))
+        if self.bridge.ctx.get_project_goal():
+            self._display_plan(generate=True)
         else:
             self._log("[yellow]Set a goal first[/] — type: /goal Your project objective")
             self.query_one("#input", Input).value = "/goal "
@@ -811,7 +840,10 @@ class CognitionReplApp(App):
                 self.action_open_setup()
                 return
             if cmd in ("/showplan", "/show-plan"):
-                self._run_bridge(lambda: self.bridge.cmd_show_plan())
+                self._display_plan(generate=False)
+                return
+            if cmd == "/shield":
+                self._log(self.bridge.cmd_shield())
                 return
             self._log_user(line)
             result = self.bridge.dispatch(line)
@@ -823,8 +855,12 @@ class CognitionReplApp(App):
             if result:
                 if cmd == "/models":
                     self._log(format_models_table(self.bridge.ctx.model_registry()))
-                elif cmd == "/plan" or "MASTER PLAN" in result:
-                    self._log(result)
+                elif cmd in ("/plan", "/showplan", "/show-plan") or "MASTER PLAN" in result:
+                    self._log(
+                        "\n[bold #3fb950]══════════════════════════════════════[/]\n"
+                        f"{result}\n"
+                        "[bold #3fb950]══════════════════════════════════════[/]\n"
+                    )
                 elif cmd == "/status":
                     self._log(result)
                     self._refresh_chrome(sync_select=False)
