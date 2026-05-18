@@ -470,7 +470,8 @@ class CognitionReplApp(App):
             self._apply_stream(chunk)
 
     def _apply_stream(self, chunk: str) -> None:
-        if "dsml" in chunk.lower() or "<|" in chunk:
+        chunk = re.sub(r"<\|[^>]*\|>", "", chunk)
+        if "dsml" in chunk.lower() or not chunk:
             return
         self._live_view.stream += chunk
         if len(self._live_view.stream) > 4000:
@@ -805,8 +806,8 @@ class CognitionReplApp(App):
         s = self._live_view.stream or ""
         if not s.strip():
             return ""
-        low = s.lower()
-        if "dsml" in low or "<|" in s:
+        s = re.sub(r"<\|[^>]*\|>", "", s)
+        if "dsml" in s.lower():
             return ""
         return s
 
@@ -818,22 +819,31 @@ class CognitionReplApp(App):
     def _assist_stream_step(self, goal_len: int) -> int:
         if goal_len <= 0:
             return 1
-        return max(1, min(12, goal_len // 25 + 1))
+        return max(4, min(48, goal_len // 10 + 1))
+
+    def _assistant_stream_markup(self, text: str) -> str:
+        body = escape_markup(text).replace("\n", "\n[#79c0ff]│ [/#79c0ff]")
+        return (
+            "\n[bold #79c0ff]┏━ Assistant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
+            f"[#79c0ff]│ [/#79c0ff]{body}\n"
+            "[bold #79c0ff]┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
+        )
 
     def _write_assistant_stream_header(self) -> None:
-        self._log(
-            "\n[bold #79c0ff]┏━ Assistant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
-            "[#79c0ff]│ [/]"
-        )
-        self.query_one("#log", ChatRichLog).start_stream_plain_merge()
+        self.query_one("#log", ChatRichLog).start_stream_frame()
 
     def _finalize_assistant_stream_in_log(self) -> None:
         if self._typing_timer is not None:
             self._typing_timer.stop()
             self._typing_timer = None
         log = self.query_one("#log", ChatRichLog)
-        log.end_stream_plain_merge()
-        self._log("[bold #79c0ff]┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n")
+        if (self._last_assistant_plain or "").strip():
+            log.update_stream_frame(
+                self._assistant_stream_markup(self._last_assistant_plain),
+                self._last_assistant_plain,
+            )
+        log.end_stream_frame()
+        self._scroll_chat_end()
         if (self._last_assistant_plain or "").strip():
             save_copy_fallback(self._last_assistant_plain)
         self._assist_header_done = False
@@ -851,9 +861,13 @@ class CognitionReplApp(App):
         step = self._assist_stream_step(goal)
         end = min(goal, self._assist_body_typed + step)
         if end > self._assist_body_typed:
-            delta = buf[self._assist_body_typed : end]
             self._assist_body_typed = end
-            self._log(escape_markup(delta))
+            visible = buf[:end]
+            self.query_one("#log", ChatRichLog).update_stream_frame(
+                self._assistant_stream_markup(visible),
+                visible,
+            )
+            self._scroll_chat_end()
         if (
             not self._chat_busy
             and (self._typing_full or "").strip()
