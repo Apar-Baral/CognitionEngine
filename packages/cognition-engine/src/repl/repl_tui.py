@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +49,7 @@ from src.repl.markup_safe import escape_markup
 from src.repl.thinking_anim import thinking_box_markup, thinking_panel_markup
 from src.repl.tips import CE_TIPS
 from src.repl.trace_viz import trace_lane_markup
+from src.agent.permissions import PermissionDecision
 
 
 COMMAND_BUTTONS: list[tuple[str, str, str]] = [
@@ -96,6 +98,54 @@ class ConfirmQuitScreen(ModalScreen[bool]):
             self.dismiss(False)
         elif event.key in ("enter", "y"):
             self.dismiss(True)
+
+
+@dataclass(frozen=True)
+class _PermissionAnswer:
+    allowed: bool
+    remember_session: bool
+
+
+class AgentPermissionScreen(ModalScreen[_PermissionAnswer | None]):
+    """User approval for destructive agent actions."""
+
+    def __init__(self, category: str, detail: str) -> None:
+        super().__init__()
+        self._category = category
+        self._detail = detail
+
+    def compose(self) -> ComposeResult:
+        safe = escape_markup(self._detail)
+        with Vertical(id="perm-frame"):
+            yield Static(
+                f"[bold #e3b341]Allow {escape_markup(self._category)}?[/]",
+                id="perm-title",
+            )
+            yield Static(safe, id="perm-detail")
+            yield Static(
+                "[dim]Session = no more prompts for this type until /end[/]",
+                markup=True,
+            )
+            with Horizontal(id="perm-actions"):
+                yield Button("Allow for session", id="perm-session", variant="warning")
+                yield Button("Allow once", id="perm-once", variant="primary")
+                yield Button("Deny", id="perm-deny", variant="error")
+
+    @on(Button.Pressed, "#perm-session")
+    def _session(self, _event: Button.Pressed) -> None:
+        self.dismiss(_PermissionAnswer(True, True))
+
+    @on(Button.Pressed, "#perm-once")
+    def _once(self, _event: Button.Pressed) -> None:
+        self.dismiss(_PermissionAnswer(True, False))
+
+    @on(Button.Pressed, "#perm-deny")
+    def _deny(self, _event: Button.Pressed) -> None:
+        self.dismiss(_PermissionAnswer(False, False))
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            self.dismiss(_PermissionAnswer(False, False))
 
 
 class ModelPickerScreen(ModalScreen[str | None]):
@@ -326,9 +376,34 @@ class CognitionReplApp(App):
                 self.bridge.ctx,
                 on_activity=self._on_agent_activity,
                 on_tokens=self._on_agent_tokens,
+                on_permission=self._request_agent_permission,
             )
         except Exception:
             return None
+
+    def _request_agent_permission(self, category: str, detail: str) -> PermissionDecision:
+        result: list[PermissionDecision] = [PermissionDecision(False)]
+        done = threading.Event()
+
+        def finish(answer: _PermissionAnswer | None) -> None:
+            if answer and answer.allowed:
+                result[0] = PermissionDecision(
+                    allowed=True,
+                    remember_session=answer.remember_session,
+                )
+            done.set()
+
+        def open_modal() -> None:
+            self.push_screen(AgentPermissionScreen(category, detail), finish)
+
+        try:
+            self.call_from_thread(open_modal)
+        except RuntimeError:
+            open_modal()
+        done.wait(timeout=600)
+        if not done.is_set():
+            return PermissionDecision(False)
+        return result[0]
 
     def _on_agent_activity(self, msg: str) -> None:
         try:
@@ -361,6 +436,10 @@ class CognitionReplApp(App):
             "model step",
             "agentic mode",
             "agent finished",
+            "permission required",
+            "permission granted",
+            "permission denied",
+            "deleting file",
             "shield",
             "done:",
         )

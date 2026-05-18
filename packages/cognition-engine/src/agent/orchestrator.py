@@ -10,6 +10,8 @@ from typing import Any
 import httpx
 
 from src.agent.context_assembler import ContextAssembler
+from src.agent.permission_gate import PermissionCallback, SessionPermissionGate
+from src.agent.permissions import permission_for_command, permission_for_tool
 from src.agent.tool_parser import extract_tool_calls
 from src.agent.tools import ToolRunner
 from src.cli.context import ProjectContext
@@ -29,10 +31,13 @@ Reply with one JSON object per action (no markdown prose instead of tools):
 {"tool": "write_file", "args": {"path": "relative/path.py", "content": "full file text"}}
 {"tool": "read_file", "args": {"path": "relative/path.py"}}
 {"tool": "list_dir", "args": {"path": "."}}
+{"tool": "delete_file", "args": {"path": "relative/path.py"}}
 {"tool": "run_command", "args": {"cmd": "python script.py"}}
 {"tool": "suggest_next", "args": {}}
 
 Rules:
+- To delete a file: use delete_file (user must approve; session approval is remembered).
+- Do not use rm in run_command unless the user has granted delete for this session.
 - Creating N files = N separate write_file calls (one path each, full content each).
 - To run scripts or shell: run_command (python, bash, grep, find, mkdir, etc.).
 - After each tool you receive [tool result] and may call more tools in the next step.
@@ -48,6 +53,7 @@ class AgentOrchestrator:
         *,
         on_activity: Callable[[str], None] | None = None,
         on_tokens: Callable[[dict[str, int]], None] | None = None,
+        on_permission: PermissionCallback | None = None,
     ) -> None:
         self.ctx = ctx
         self.assembler = ContextAssembler(ctx)
@@ -57,6 +63,11 @@ class AgentOrchestrator:
         self._history: list[dict[str, str]] = []
         self._on_activity = on_activity or (lambda _msg: None)
         self._on_tokens = on_tokens or (lambda _u: None)
+        self._permissions = SessionPermissionGate(
+            ctx,
+            on_request=on_permission,
+            on_activity=self._activity,
+        )
         self.session_tokens: dict[str, int] = {
             "input": 0,
             "output": 0,
@@ -229,6 +240,17 @@ class AgentOrchestrator:
             self._activity(f"📂 Listing directory: {path}")
             return self.tools.list_dir(path)
 
+        if name == "delete_file":
+            path = str(args.get("path", ""))
+            cat, detail = permission_for_tool(name, args)
+            if cat and not self._permissions.ensure(cat, detail):
+                return (
+                    f"Error: delete denied by user ({path}). "
+                    "Tell them to approve in the permission dialog, or use delete_file after approval."
+                )
+            self._activity(f"🗑 Deleting file: {path}")
+            return self.tools.delete_file(path)
+
         if name == "write_file":
             path = str(args.get("path", ""))
             content = str(args.get("content", ""))
@@ -245,9 +267,18 @@ class AgentOrchestrator:
 
         if name == "run_command":
             cmd = str(args.get("cmd", ""))
+            cat, detail = permission_for_command(cmd)
+            if cat:
+                if detail.startswith("Blocked dangerous"):
+                    return f"Error: {detail}"
+                if not self._permissions.ensure(cat, detail):
+                    return (
+                        "Error: command denied — user did not approve delete for this action. "
+                        "Use delete_file tool instead, or ask them to allow delete for the session."
+                    )
             preview = cmd if len(cmd) <= 100 else cmd[:97] + "…"
             self._activity(f"⚡ Running command: {preview}")
-            result = self.tools.run_command(cmd)
+            result = self.tools.run_command(cmd, grants=self._permissions.grants)
             self._commands_run_this_turn += 1
             exit_hint = result[:80].replace("\n", " ")
             self._activity(f"⚡ Command output: {exit_hint}")

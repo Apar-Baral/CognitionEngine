@@ -326,6 +326,32 @@ ModelPickerScreen {
     text-style: bold;
 }
 
+AgentPermissionScreen {
+    align: center middle;
+}
+
+#perm-frame {
+    width: 72;
+    max-width: 90;
+    background: #111820;
+    border: solid #e3b341;
+    padding: 1 2;
+}
+
+#perm-detail {
+    margin: 1 0;
+    color: #c9d1d9;
+}
+
+#perm-actions {
+    height: auto;
+    margin-top: 1;
+}
+
+#perm-actions Button {
+    margin-right: 1;
+}
+
 ConfirmQuitScreen {
     align: center middle;
 }

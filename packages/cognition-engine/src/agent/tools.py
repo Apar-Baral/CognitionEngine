@@ -64,7 +64,7 @@ _BLOCKED_PATTERNS = (
 )
 
 
-def command_is_allowed(cmd_line: str) -> tuple[bool, str]:
+def command_is_allowed(cmd_line: str, *, grants: frozenset[str] | None = None) -> tuple[bool, str]:
     """Validate shell one-liner: each pipeline segment must start with an allowed command."""
     line = cmd_line.strip()
     if not line:
@@ -73,6 +73,11 @@ def command_is_allowed(cmd_line: str) -> tuple[bool, str]:
     for pat in _BLOCKED_PATTERNS:
         if re.search(pat, lower):
             return False, "blocked for safety"
+    from src.agent.permissions import PERM_DELETE, permission_for_command
+
+    perm, danger = permission_for_command(line)
+    if perm == PERM_DELETE and danger.startswith("Blocked dangerous"):
+        return False, danger
     segments = re.split(r"\s*(?:\||&&|\|\|)\s*", line)
     for segment in segments:
         seg = segment.strip()
@@ -85,8 +90,9 @@ def command_is_allowed(cmd_line: str) -> tuple[bool, str]:
         if not parts:
             continue
         base = parts[0]
-        if base not in ALLOWED_COMMANDS:
-            return False, f"'{base}' not in allowlist"
+        extra = frozenset({"rm", "unlink"}) if grants and PERM_DELETE in grants else frozenset()
+        if base not in ALLOWED_COMMANDS and base not in extra:
+            return False, f"'{base}' not in allowlist (delete needs your approval — use delete_file tool)"
     return True, ""
 
 
@@ -143,8 +149,22 @@ class ToolRunner:
         path.write_text(content, encoding="utf-8")
         return f"Wrote {rel_path} ({len(content)} bytes)"
 
-    def run_command(self, cmd_line: str) -> str:
-        ok, reason = command_is_allowed(cmd_line)
+    def delete_file(self, rel_path: str) -> str:
+        path = (self.root / rel_path).resolve()
+        if not str(path).startswith(str(self.root)):
+            return "Error: path outside project"
+        if not path.exists():
+            return f"Error: not found {rel_path}"
+        if path.is_dir():
+            return f"Error: {rel_path} is a directory (use run_command only if allowed)"
+        try:
+            path.unlink()
+        except OSError as exc:
+            return f"Error: could not delete {rel_path}: {exc}"
+        return f"Deleted {rel_path}"
+
+    def run_command(self, cmd_line: str, *, grants: frozenset[str] | None = None) -> str:
+        ok, reason = command_is_allowed(cmd_line, grants=grants)
         if not ok:
             allowed = ", ".join(sorted(ALLOWED_COMMANDS))
             return (

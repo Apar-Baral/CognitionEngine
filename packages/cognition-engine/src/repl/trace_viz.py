@@ -14,6 +14,8 @@ _TRACE_RULES: list[tuple[str, str, str]] = [
     ("command output", "RUN", "#ffa657"),
     ("model step", "STEP", "#79c0ff"),
     ("agentic mode", "AGENT", "#79c0ff"),
+    ("permission", "PERM", "#e3b341"),
+    ("deleting file", "DEL", "#f85149"),
     ("editing file", "EDIT", "#ffa657"),
     ("executing shell", "RUN", "#ffa657"),
     ("tool", "TOOL", "#ffa657"),
