@@ -92,7 +92,10 @@ def main(
 @app.command("setup")
 def cmd_setup(
     project_path: Optional[Path] = typer.Option(
-        None, "--project", "-p", help="Also initialize this project directory"
+        None, "--project", "-p", help="Project directory (default: current folder)"
+    ),
+    full: bool = typer.Option(
+        False, "--full", help="Full wizard (git, GitHub, model list). Default is quick Hermes-style setup."
     ),
     non_interactive: bool = typer.Option(
         False, "--yes", "-y", help="Skip interactive prompts"
@@ -111,16 +114,18 @@ def cmd_setup(
         help="Push project to GitHub after git init (default: ask)",
     ),
 ) -> None:
-    """First-time setup: global config, models registry, optional project init."""
+    """Quick setup (default) or full wizard with --full."""
     try:
         from src.cli.setup_wizard import run_full_setup
 
+        target = (project_path or Path.cwd()).resolve()
         run_full_setup(
-            project_path,
+            target,
             interactive=not non_interactive,
             init_git=git,
             push_github=github,
             install_semantic=semantic,
+            quick=not full,
         )
     except Exception as e:
         _handle_error(e)
@@ -455,7 +460,7 @@ def cmd_doctor() -> None:
 
     pkg_root = Path(src.__file__).resolve().parent
     checks: list[tuple[str, bool]] = [
-        ("Package version >= 0.3.8", __version__ >= "0.3.8"),
+        ("Package version >= 0.3.9", __version__ >= "0.3.9"),
         ("session_tokens.py present", (pkg_root / "memory" / "session_tokens.py").is_file()),
         (
             "Token dict normalization works",
@@ -484,12 +489,14 @@ def cmd_doctor() -> None:
     formatters.print_info(f"Version: {__version__}")
     formatters.print_info(f"Package path: {pkg_root}")
     env = runtime_env_status()
-    if env["venv_active"]:
-        formatters.print_success("Python: running inside virtualenv")
+    if env.get("ce_venv_active"):
+        formatters.print_success(f"CE runtime OK (no manual activate needed): {env['ce_venv_python']}")
+    elif env.get("ce_venv_found"):
+        formatters.print_info(f"CE venv: {env['ce_venv_python']} (auto-used when you run cognition-engine)")
+    elif env["venv_active"]:
+        formatters.print_warning("Another venv is active; CE will switch to its own venv automatically")
     else:
-        formatters.print_warning("Python: not in virtualenv (CE auto-reexecs when CE venv exists)")
-    if env["ce_venv_found"]:
-        formatters.print_info(f"CE venv: {env['ce_venv_python']}")
+        formatters.print_warning("CE venv not found — run install-ce.sh")
     warn = env_warning_message()
     if warn:
         formatters.print_warning(warn)

@@ -280,6 +280,10 @@ class CognitionReplApp(App):
         )
         if self.bridge.ctx.is_initialized():
             log.write(f"[dim]Project:[/] {self.bridge.root}")
+            boot = self.bridge.get_bootstrap_text()
+            if boot and not boot.startswith("Project not"):
+                snippet = boot[:900] + "\n[dim]…[/]" if len(boot) > 900 else boot
+                log.write(snippet)
         else:
             last = load_last_setup().get("project_path")
             if last:
@@ -288,12 +292,7 @@ class CognitionReplApp(App):
                     f"[dim]or[/] cd {last}"
                 )
             else:
-                log.write("[yellow]Tip:[/] click [bold]Setup project[/] or run: cognition-engine setup --project .")
-        else:
-            boot = self.bridge.get_bootstrap_text()
-            if boot and not boot.startswith("Project not"):
-                snippet = boot[:900] + "\n[dim]…[/]" if len(boot) > 900 else boot
-                log.write(snippet)
+                log.write("[yellow]Tip:[/] click [bold]Setup project[/] or: cognition-engine setup")
 
     @on(Select.Changed, "#model-select")
     def _on_model_dropdown(self, event: Select.Changed) -> None:

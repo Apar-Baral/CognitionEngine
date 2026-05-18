@@ -283,7 +283,17 @@ def run_full_setup(
     init_git: bool | None = None,
     push_github: bool | None = None,
     install_semantic: bool = False,
+    quick: bool = True,
 ) -> None:
+    if quick and interactive:
+        from src.cli.hermes_setup import hermes_quick_setup, needs_api_keys
+
+        root = project_path or Path.cwd()
+        hermes_quick_setup(root, ask_keys=needs_api_keys(), init_project=True)
+        if install_semantic:
+            _install_semantic_extra()
+        return
+
     _, global_summary = setup_global(interactive=interactive)
     if install_semantic:
         _install_semantic_extra()

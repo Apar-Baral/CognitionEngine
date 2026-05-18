@@ -12,16 +12,14 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 
 from src.cli.context import resolve_project_root
-from src.cli.interactive_setup import ensure_interactive_ready
 from src.repl.repl_commands import is_chat_message, is_slash_command
 from src.repl.session_bridge import SessionBridge
 
 
 def run_repl(project_root: Path | None = None) -> None:
-    """Rich stdin REPL — full commands, memory/RL, in-terminal setup."""
+    """Rich stdin REPL — full commands, memory/RL."""
     root = resolve_project_root(project_root)
-    ctx = ensure_interactive_ready(root, interactive=True)
-    bridge = SessionBridge(ctx.root)
+    bridge = SessionBridge(root)
     console = Console()
 
     model = bridge.ctx.config.get("default_model", "?")
@@ -101,13 +99,12 @@ def run_repl(project_root: Path | None = None) -> None:
 
 def run_repl_textual(project_root: Path | None = None) -> None:
     """Textual TUI; falls back to rich REPL with error shown once."""
-    if os.environ.get("CE_SIMPLE_REPL") == "1":
+    if os.environ.get("CE_SIMPLE_REPL", "1") == "1":
         run_repl(project_root)
         return
     try:
         from src.repl.repl_tui import CognitionReplApp
 
-        ensure_interactive_ready(project_root, interactive=True)
         app = CognitionReplApp(project_root)
         app.run()
     except Exception as exc:

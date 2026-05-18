@@ -233,10 +233,18 @@ INSTALLED="$("$VENV/bin/cognition-engine" --version 2>/dev/null || echo unknown)
 echo "cognition-engine $INSTALLED"
 "$VENV/bin/cognition-engine" doctor || true
 
+PATH_LINE="export PATH=\"$VENV/bin:\$PATH\""
+if [ -f "$HOME/.bashrc" ] && ! grep -qF 'cognition-engine/.venv/bin' "$HOME/.bashrc" 2>/dev/null; then
+  {
+    echo ""
+    echo "# Cognition Engine (no manual venv activate needed)"
+    echo "$PATH_LINE"
+  } >> "$HOME/.bashrc"
+  echo "==> Added CE to ~/.bashrc — run: source ~/.bashrc  (or open a new terminal)"
+else
+  echo "==> PATH tip (if command not found): $PATH_LINE"
+fi
 echo ""
-echo "Add to ~/.bashrc (once):"
-echo "  export PATH=\"$VENV/bin:\$PATH\""
-echo ""
-echo "Each session:"
-echo "  source $VENV/bin/activate"
+echo "You do NOT need: source $VENV/bin/activate"
+echo "Just run: cognition-engine"
 echo ""

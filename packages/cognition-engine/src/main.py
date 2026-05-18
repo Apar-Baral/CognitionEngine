@@ -30,10 +30,16 @@ def main() -> None:
 
     # No subcommand → interactive REPL (Hermes-style default)
     if len(sys.argv) == 1:
-        from src.cli.interactive_setup import ensure_interactive_ready
+        import os
+
+        from src.cli.context import resolve_project_root
+        from src.cli.hermes_setup import hermes_quick_setup, needs_api_keys
         from src.repl.repl_app import run_repl_textual
 
-        ensure_interactive_ready(interactive=True)
+        root = resolve_project_root()
+        if needs_api_keys() and os.environ.get("CE_SKIP_SETUP") != "1":
+            hermes_quick_setup(root, ask_keys=True, init_project=False)
+        os.environ["CE_SETUP_DONE"] = "1"
         run_repl_textual()
         return
     try:

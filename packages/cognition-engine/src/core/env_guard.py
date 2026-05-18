@@ -1,4 +1,4 @@
-"""Ensure Cognition Engine runs inside its venv (Hermes-style — no PEP 668 surprises)."""
+"""Hermes-style: always run CE on its own venv — never ask user to activate."""
 
 from __future__ import annotations
 
@@ -7,19 +7,11 @@ import sys
 from pathlib import Path
 
 
-def is_venv_active() -> bool:
-    """True when running inside any virtual environment."""
-    if sys.prefix != sys.base_prefix:
-        return True
-    return bool(getattr(sys, "real_prefix", None))
-
-
 def cognition_engine_home() -> Path:
     return Path(os.environ.get("COGNITION_ENGINE_HOME", Path.home() / "CognitionEngine")).expanduser()
 
 
 def cognition_venv_python() -> Path | None:
-    """Path to CE package venv python, if install-ce.sh layout exists."""
     pkg = cognition_engine_home() / "packages" / "cognition-engine"
     for rel in ("bin/python", "Scripts/python.exe"):
         candidate = pkg / ".venv" / rel
@@ -28,55 +20,75 @@ def cognition_venv_python() -> Path | None:
     return None
 
 
+def cognition_venv_bin() -> Path | None:
+    py = cognition_venv_python()
+    return py.parent if py else None
+
+
+def is_running_on_ce_venv() -> bool:
+    venv_py = cognition_venv_python()
+    if not venv_py:
+        return False
+    try:
+        return Path(sys.executable).resolve() == venv_py
+    except OSError:
+        return False
+
+
+def is_venv_active() -> bool:
+    if sys.prefix != sys.base_prefix:
+        return True
+    return bool(getattr(sys, "real_prefix", None))
+
+
 def reexec_in_cognition_venv() -> None:
     """
-    Re-launch this process with the CE venv interpreter when available.
-    Avoids Kali/system PEP 668 errors without asking the user to activate manually.
+    Re-launch with CE's venv Python.
+    Runs even if another project venv is active (fixes Kali xss-finder .venv + CE).
     """
-    if is_venv_active():
-        return
     if os.environ.get("CE_SKIP_VENV_REEXEC") == "1":
         return
     venv_py = cognition_venv_python()
-    if venv_py is None:
+    if not venv_py:
         return
-    try:
-        if Path(sys.executable).resolve() == venv_py:
-            return
-    except OSError:
+    if is_running_on_ce_venv():
         return
     os.environ["CE_SKIP_VENV_REEXEC"] = "1"
+    os.environ["VIRTUAL_ENV"] = str(venv_py.parent.parent)
     os.execv(str(venv_py), [str(venv_py), *sys.argv])
 
 
+def ensure_path_in_shell() -> str | None:
+    """Return export line for ~/.bashrc if CE bin not on PATH."""
+    bin_dir = cognition_venv_bin()
+    if not bin_dir:
+        return None
+    ce = bin_dir / "cognition-engine"
+    if not ce.is_file():
+        return None
+    return f'export PATH="{bin_dir}:$PATH"'
+
+
 def runtime_env_status() -> dict[str, str | bool]:
-    """Diagnostics for doctor / REPL status bar."""
     venv_py = cognition_venv_python()
+    on_ce = is_running_on_ce_venv()
     return {
         "venv_active": is_venv_active(),
+        "ce_venv_active": on_ce,
         "ce_venv_found": venv_py is not None,
         "ce_venv_python": str(venv_py) if venv_py else "",
         "executable": sys.executable,
-        "recommended_activate": (
-            f"source {venv_py.parent}/activate"
-            if venv_py and venv_py.parent.name == "bin"
-            else ""
-        ),
     }
 
 
 def env_warning_message() -> str | None:
-    """Human-readable warning when env is risky; None if OK."""
-    if is_venv_active():
+    if is_running_on_ce_venv():
         return None
     venv_py = cognition_venv_python()
     if venv_py:
-        return (
-            "Not in a virtualenv. CE will auto-switch when started from system Python.\n"
-            f"Or activate: source {venv_py.parent}/activate"
-        )
+        return None  # reexec handles it; no warning needed
     return (
-        "Not in a virtualenv and CE is not installed under ~/CognitionEngine.\n"
-        "Run: curl -fsSL https://raw.githubusercontent.com/Apar-Baral/CognitionEngine/"
+        "Cognition Engine not installed. Run:\n"
+        "  curl -fsSL https://raw.githubusercontent.com/Apar-Baral/CognitionEngine/"
         "master/scripts/install-ce.sh | bash"
     )
