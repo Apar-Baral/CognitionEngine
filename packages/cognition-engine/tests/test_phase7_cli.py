@@ -26,7 +26,7 @@ def test_cc_help_and_version():
     assert "start" in r.stdout
     r2 = _invoke(["--version"])
     assert r2.exit_code == 0
-    assert "0.1.0" in r2.stdout
+    assert "0.1." in r2.stdout
 
 
 def test_init_status_plan_preview(tmp_path: Path):
@@ -62,6 +62,12 @@ def test_config_list(tmp_path: Path):
         r = _invoke(["--project", str(tmp_path), "config", "--list"])
         assert r.exit_code == 0, r.stdout
         assert "shield_sensitivity" in r.stdout or "default_model" in r.stdout
+
+
+def test_doctor_passes(tmp_path: Path):
+    r = _invoke(["doctor"])
+    assert r.exit_code == 0, r.stdout + r.stderr
+    assert "All checks passed" in r.stdout
 
 
 def test_end_session_after_start(tmp_path: Path):

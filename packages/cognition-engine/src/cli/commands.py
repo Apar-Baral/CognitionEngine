@@ -53,7 +53,13 @@ def _handle_error(exc: Exception) -> None:
     else:
         if _state.get("verbose"):
             raise exc
-        formatters.print_error(str(exc))
+        suggestion = ""
+        if isinstance(exc, TypeError) and "not 'dict'" in str(exc):
+            suggestion = (
+                "Outdated cognition-engine install (missing end-session fix). "
+                "Run `cognition-engine doctor`, then reinstall from GitHub commit 0ed9ed8+."
+            )
+        formatters.print_error(str(exc), suggestion=suggestion)
     raise typer.Exit(1) from exc
 
 
@@ -281,6 +287,58 @@ def cmd_end(
         )
     except Exception as e:
         _handle_error(e)
+
+
+@app.command("doctor")
+def cmd_doctor() -> None:
+    """Verify the installed package includes critical fixes."""
+    import src
+    from src.memory.session_tokens import session_tokens_consumed
+
+    pkg_root = Path(src.__file__).resolve().parent
+    checks: list[tuple[str, bool]] = [
+        ("Package version >= 0.1.1", __version__ >= "0.1.1"),
+        ("session_tokens.py present", (pkg_root / "memory" / "session_tokens.py").is_file()),
+        (
+            "Token dict normalization works",
+            session_tokens_consumed({"tokens": {"total": 7}}) == 7,
+        ),
+    ]
+    ks_path = pkg_root / "synthesizer" / "knowledge_synthesizer.py"
+    if ks_path.is_file():
+        ks_text = ks_path.read_text(encoding="utf-8")
+        checks.append(
+            (
+                "Knowledge synthesizer uses session_tokens_consumed",
+                "session_tokens_consumed" in ks_text,
+            )
+        )
+        checks.append(
+            (
+                "Legacy int(tokens dict) pattern removed",
+                'int(s.get("tokens_consumed", s.get("tokens"' not in ks_text,
+            ),
+        )
+
+    formatters.print_rule("Install diagnostics")
+    formatters.print_info(f"Version: {__version__}")
+    formatters.print_info(f"Package path: {pkg_root}")
+    failed = 0
+    for label, ok in checks:
+        if ok:
+            formatters.print_success(label)
+        else:
+            formatters.print_error(label)
+            failed += 1
+
+    if failed:
+        formatters.print_warning(
+            "Reinstall from a fresh clone:\n"
+            "  git clone https://github.com/Apar-Baral/CognitionEngine.git ~/CognitionEngine\n"
+            "  cd ~/CognitionEngine/packages/cognition-engine && pip install -e ."
+        )
+        raise typer.Exit(1)
+    formatters.print_success("All checks passed.")
 
 
 @app.command("status")
