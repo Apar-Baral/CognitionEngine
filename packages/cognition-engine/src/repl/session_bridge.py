@@ -33,12 +33,24 @@ class SessionBridge:
     def status_line(self) -> str:
         if not self.ctx.is_initialized():
             return "no project"
-        phase = self.ctx.query.get_current_phase()
+        dna = self.ctx.query.refresh()
+        phases = dna.get("master_plan", {}).get("phase_sequence", [])
+        phase = q.get_current_phase()
         model = self.ctx.config.get("default_model", "?")
         pid = phase.get("id", "—") if phase else "—"
         goal = self.ctx.get_project_goal()
-        g = (goal[:40] + "…") if len(goal) > 40 else goal
-        return f"{pid} | {model} | {g or 'no goal'}"
+        g = (goal[:32] + "…") if len(goal) > 32 else goal
+        if not phases:
+            return f"{pid} | {model} | no plan"
+        overall = q.calculate_project_completion()
+        from src.core.constants import PhaseStatus
+
+        done = sum(
+            1 for p in phases if p.get("status") == PhaseStatus.COMPLETED.value
+        )
+        return (
+            f"{pid} | {overall:.0f}% impl · {done}/{len(phases)} done | {model} | {g or 'no goal'}"
+        )
 
     def get_bootstrap_text(self) -> str:
         err = self.ensure_initialized()
@@ -55,7 +67,8 @@ class SessionBridge:
   /model [ID]        Pick model (Ctrl+M) or set by ID
   /models            List registered models
   /goal TEXT         Set project goal
-  /plan [goal]       Generate master plan
+  /plan [goal]       Generate + show master plan
+  /showplan          Show saved plan in chat
   /start [task]      Start session + refresh bootstrap
   /end SUMMARY       End session (+ auto-commit if enabled)
   /status            Project progress
@@ -101,11 +114,40 @@ class SessionBridge:
         if not g:
             return "Provide goal: /plan Your project description"
         from src.planner.phase_generator import generate_goal_plan
+        from src.repl.plan_display import format_plan_markup
 
         scan = self.ctx.scan()
         phases = generate_goal_plan(g, num_phases=24, language=scan["language"])
         self.ctx.save_plan(phases, goal=g)
-        return f"Plan saved: {len(phases)} phases."
+        dna = self.ctx.query.refresh()
+        overall = self.ctx.query.calculate_project_completion()
+        name = dna.get("project", {}).get("name", self.root.name)
+        return format_plan_markup(
+            phases,
+            goal=g,
+            overall_completion=overall,
+            project_name=str(name),
+        )
+
+    def cmd_show_plan(self) -> str:
+        err = self.ensure_initialized()
+        if err:
+            return err
+        from src.repl.plan_display import format_plan_markup
+
+        dna = self.ctx.query.refresh()
+        phases = dna.get("master_plan", {}).get("phase_sequence", [])
+        if not phases:
+            return "No plan yet. Click [bold]Generate plan[/] or run /plan"
+        goal = self.ctx.get_project_goal()
+        overall = self.ctx.query.calculate_project_completion()
+        name = dna.get("project", {}).get("name", self.root.name)
+        return format_plan_markup(
+            phases,
+            goal=goal,
+            overall_completion=overall,
+            project_name=str(name),
+        )
 
     def cmd_start(self, task: str = "") -> str:
         err = self.ensure_initialized()
@@ -232,11 +274,9 @@ class SessionBridge:
         err = self.ensure_initialized()
         if err:
             return err
-        dna = self.ctx.query.refresh()
-        comp = self.ctx.query.calculate_project_completion()
-        phase = self.ctx.query.get_current_phase()
-        name = phase.get("name", "") if phase else ""
-        return f"Progress: {comp:.0f}% | Phase: {phase.get('id') if phase else '—'} {name}"
+        from src.repl.plan_display import format_status_detail
+
+        return format_status_detail(self.ctx)
 
     def cmd_budget(self) -> str:
         err = self.ensure_initialized()
@@ -301,6 +341,7 @@ class SessionBridge:
             "/model": lambda: self.cmd_model(arg),
             "/goal": lambda: self.cmd_goal(arg),
             "/plan": lambda: self.cmd_plan(arg),
+            "/showplan": lambda: self.cmd_show_plan(),
             "/start": lambda: self.cmd_start(arg),
             "/end": lambda: self.cmd_end(arg),
             "/status": lambda: self.cmd_status(),

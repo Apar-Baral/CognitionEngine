@@ -141,6 +141,27 @@ Footer {
     content-align: left middle;
 }
 
+#tracker-panel {
+    height: auto;
+    max-height: 5;
+    background: #0d1520;
+    border: solid #2d3a4f;
+    padding: 0 2;
+    margin-bottom: 1;
+}
+
+#activity-scroll {
+    height: 5;
+    max-height: 6;
+    border: solid #2d3a4f;
+    background: #0a0e14;
+    margin-bottom: 1;
+}
+
+#activity-log {
+    padding: 0 1;
+}
+
 #chat-scroll {
     height: 1fr;
     border: solid #2d3a4f;

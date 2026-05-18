@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -12,6 +13,7 @@ import httpx
 from src.agent.context_assembler import ContextAssembler
 from src.agent.tools import ToolRunner
 from src.cli.context import ProjectContext
+from src.models.dynamic_registry import DynamicRegistry
 from src.models.request_builder import RequestBuilder
 from src.models.response_parser import ResponseParser
 
@@ -28,13 +30,25 @@ Otherwise reply with normal markdown for the user.
 
 
 class AgentOrchestrator:
-    def __init__(self, ctx: ProjectContext) -> None:
+    def __init__(
+        self,
+        ctx: ProjectContext,
+        *,
+        on_activity: Callable[[str], None] | None = None,
+    ) -> None:
         self.ctx = ctx
         self.assembler = ContextAssembler(ctx)
         self.tools = ToolRunner(ctx.root)
         self.builder = RequestBuilder()
         self.parser = ResponseParser()
         self._history: list[dict[str, str]] = []
+        self._on_activity = on_activity or (lambda _msg: None)
+
+    def _activity(self, msg: str) -> None:
+        try:
+            self._on_activity(msg)
+        except Exception:
+            logger.debug("activity callback failed", exc_info=True)
 
     @staticmethod
     def resolve_api_key(config: Any, provider: str) -> str | None:
@@ -80,7 +94,11 @@ class AgentOrchestrator:
 
     def chat(self, user_message: str) -> str:
         self._history.append({"role": "user", "content": user_message})
+        self._activity("Loading project context and session memory…")
         model, api_key = self._resolve_model()
+        model_id = str(model.get("id", self.ctx.config.get("default_model", "?")))
+        display = model.get("display_name") or model_id
+        self._activity(f"Calling {display} ({DynamicRegistry.api_model_name(model)})…")
         system = self.assembler.build_system_prompt() + "\n" + TOOL_SPEC
         messages = [{"role": "user", "content": m["content"]} for m in self._history[-12:]]
         unified: dict[str, Any] = {
@@ -91,6 +109,7 @@ class AgentOrchestrator:
         }
         url, headers, body = self.builder.build_request(unified, model, api_key=api_key)
         t0 = time.perf_counter()
+        self._activity("Waiting for model response…")
         with httpx.Client(timeout=120.0) as client:
             resp = client.post(url, headers=headers, json=body)
             raw = resp.json() if resp.content else {}
@@ -98,6 +117,7 @@ class AgentOrchestrator:
                 err = self.parser.parse_error(raw, resp.status_code)
                 raise RuntimeError(err.get("message", str(raw)))
         latency = (time.perf_counter() - t0) * 1000
+        self._activity(f"Response received ({latency:.0f} ms) — parsing…")
         parsed = self.parser.parse_response(raw, model, latency_ms=latency)
         text = parsed.get("content", "") or ""
         usage = self.parser.extract_usage(raw, model)
@@ -109,6 +129,7 @@ class AgentOrchestrator:
             return tool_result
 
         self._history.append({"role": "assistant", "content": text})
+        self._activity("Done.")
         return text
 
     def _try_tool(self, text: str) -> str | None:
@@ -123,9 +144,11 @@ class AgentOrchestrator:
             return None
         name = data["tool"]
         args = data.get("args") or {}
+        self._activity(f"Running tool: {name}…")
         if name == "read_file":
             return self.tools.read_file(str(args.get("path", "")))
         if name == "write_file":
+            self._activity("Shield: validating Python before write…")
             return self.tools.write_file(
                 str(args.get("path", "")),
                 str(args.get("content", "")),
@@ -134,6 +157,7 @@ class AgentOrchestrator:
         if name == "run_command":
             return self.tools.run_command(str(args.get("cmd", "")))
         if name == "suggest_next":
+            self._activity("Computing next-step recommendations…")
             return self.tools.suggest_next(self.ctx)
         return f"Unknown tool: {name}"
 

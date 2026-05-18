@@ -44,17 +44,18 @@ from src.repl.session_bridge import SessionBridge
 COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-model", "Change model", "primary"),
     ("btn-start", "Start session", "primary"),
-    ("btn-status", "Status", ""),
-    ("btn-plan", "Generate plan", ""),
+    ("btn-plan", "Generate plan", "primary"),
+    ("btn-show-plan", "Show plan", ""),
+    ("btn-status", "Track progress", ""),
     ("btn-end", "End session", ""),
     ("btn-commit", "Git commit", ""),
     ("btn-setup", "Setup keys", "primary"),
     ("btn-quit", "Exit CE", "danger"),
 ]
 
-COMMAND_HINTS = """[dim]Chat:[/] Enter send · scroll anytime
-[dim]Quit:[/] Exit CE · Ctrl+Q · Esc
-[dim]Busy:[/] Esc cancels · PgUp/Dn scroll"""
+COMMAND_HINTS = """[dim]Chat:[/] Enter · work log shows agent steps
+[dim]Plan:[/] Generate / Show plan · Track progress
+[dim]Quit:[/] Exit CE · Ctrl+Q · Esc cancels chat"""
 
 _THINK_FRAMES = ("◐", "◓", "◑", "◒")
 
@@ -294,9 +295,15 @@ class CognitionReplApp(App):
         try:
             from src.agent.orchestrator import AgentOrchestrator
 
-            return AgentOrchestrator(self.bridge.ctx)
+            return AgentOrchestrator(self.bridge.ctx, on_activity=self._on_agent_activity)
         except Exception:
             return None
+
+    def _on_agent_activity(self, msg: str) -> None:
+        try:
+            self.call_from_thread(self._log_work, msg)
+        except RuntimeError:
+            self._log_work(msg)
 
     def _try_bind_last_project(self) -> None:
         """Do not auto-switch to a different directory than cwd (avoids surprise project context)."""
@@ -363,6 +370,10 @@ class CognitionReplApp(App):
                     yield Static(COMMAND_HINTS, id="command-hints", markup=True)
             with Vertical(id="main-column"):
                 yield Static(self._top_bar_text(), id="top-bar", markup=True)
+                yield Static(self._tracker_text(), id="tracker-panel", markup=True)
+                yield Static("[dim]Work log[/]", classes="rail-section-title")
+                with VerticalScroll(id="activity-scroll", can_focus=False):
+                    yield RichLog(id="activity-log", highlight=False, markup=True, wrap=True)
                 with VerticalScroll(id="chat-scroll", can_focus=True):
                     yield Static("", id="thinking-bar", markup=True)
                     yield RichLog(id="log", highlight=True, markup=True, wrap=True)
@@ -379,6 +390,13 @@ class CognitionReplApp(App):
             load_last_setup(),
             load_project_setup_summary(self.bridge.root),
         )
+
+    def _tracker_text(self) -> str:
+        if not self.bridge.ctx.is_initialized():
+            return "[dim]Tracker:[/] initialize project with [bold]Setup keys[/] or /setup"
+        from src.repl.plan_display import format_status_detail
+
+        return format_status_detail(self.bridge.ctx)
 
     def _top_bar_text(self) -> str:
         from src.cli.model_picker import resolve_model_id
@@ -417,9 +435,14 @@ class CognitionReplApp(App):
 
     def _refresh_chrome(self, *, sync_select: bool = False) -> None:
         self.query_one("#top-bar", Static).update(self._top_bar_text())
+        self.query_one("#tracker-panel", Static).update(self._tracker_text())
         self.query_one("#setup-panel", Static).update(self._setup_panel_text())
         if sync_select:
             self._sync_model_select()
+
+    def _log_work(self, text: str) -> None:
+        self.query_one("#activity-log", RichLog).write(f"[cyan]▸[/] [italic]{text}[/]")
+        self.query_one("#activity-scroll", VerticalScroll).scroll_end(animate=False)
 
     def _apply_model_from_ui(self, model_id: str) -> None:
         from src.cli.model_picker import apply_model_choice, resolve_model_id
@@ -505,6 +528,7 @@ class CognitionReplApp(App):
 
     def _begin_chat(self, line: str) -> None:
         self._set_chat_busy(True)
+        self._log_work("Starting agent turn…")
         self._start_thinking()
 
         def run_chat() -> ChatJobResult:
@@ -599,6 +623,8 @@ class CognitionReplApp(App):
                 self._run_bridge(lambda: self.bridge.cmd_status())
         elif bid == "btn-plan":
             self._prompt_plan()
+        elif bid == "btn-show-plan":
+            self._run_bridge(lambda: self.bridge.cmd_show_plan())
         elif bid == "btn-end":
             if self._require_project("End session"):
                 self.action_prompt_end()
@@ -629,6 +655,8 @@ class CognitionReplApp(App):
                     self._require_project("This command")
                 elif out.startswith("__ERR__:"):
                     self._log_system(out[7:])
+                elif out and "MASTER PLAN" in out:
+                    self._log(out)
                 elif out:
                     self._log_system(out)
                 self._refresh_chrome(sync_select=False)
@@ -763,6 +791,9 @@ class CognitionReplApp(App):
             if cmd == "/setup":
                 self.action_open_setup()
                 return
+            if cmd in ("/showplan", "/show-plan"):
+                self._run_bridge(lambda: self.bridge.cmd_show_plan())
+                return
             self._log_user(line)
             result = self.bridge.dispatch(line)
             if result == "__EXIT__":
@@ -773,6 +804,11 @@ class CognitionReplApp(App):
             if result:
                 if cmd == "/models":
                     self._log(format_models_table(self.bridge.ctx.model_registry()))
+                elif cmd == "/plan" or "MASTER PLAN" in result:
+                    self._log(result)
+                elif cmd == "/status":
+                    self._log(result)
+                    self._refresh_chrome(sync_select=False)
                 else:
                     self._log_system(result)
             self._refresh_chrome(sync_select=False)
