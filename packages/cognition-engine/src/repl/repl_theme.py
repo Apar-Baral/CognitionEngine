@@ -129,9 +129,9 @@ Footer {
 }
 
 #trace-rail {
-    width: 28;
-    min-width: 26;
-    max-width: 32;
+    width: 34;
+    min-width: 30;
+    max-width: 38;
     height: 1fr;
     background: #080c10;
     border-left: solid #2d3a4f;
@@ -165,13 +165,15 @@ Footer {
 }
 
 #token-bar {
-    height: 1;
-    display: none;
-    background: #0d1520;
+    height: 2;
+    min-height: 2;
+    background: #131a24;
     border: solid #3d5a80;
+    border-top: solid #2d3a4f;
     padding: 0 2;
-    color: #8b949e;
+    color: #e6edf3;
     content-align: left middle;
+    margin: 0;
 }
 
 #tips-bar {
@@ -183,50 +185,42 @@ Footer {
     text-style: italic;
 }
 
-#thinking-row {
+#thinking-box {
     display: none;
-    height: 2;
-    min-height: 2;
-    max-height: 3;
+    height: auto;
+    min-height: 1;
+    max-height: 12;
     border: solid #6cb6ff;
     background: #0d1520;
-    margin-bottom: 1;
+    margin: 1 0;
     padding: 0 1;
 }
 
-#thinking-row.visible {
+#thinking-box.visible {
     display: block;
+}
+
+#thinking-head {
+    height: 1;
+    min-height: 1;
 }
 
 #think-spinner {
     width: 3;
     min-width: 3;
-    height: 100%;
+    height: 1;
     content-align: center middle;
 }
 
 #chat-thinking {
-    width: 1fr;
-    height: 100%;
-    padding: 0 1;
-    color: #6cb6ff;
-    content-align: left middle;
-}
-
-#thinking-bar {
     display: none;
-    height: 2;
-    min-height: 2;
-    padding: 0 2;
-    background: #152238;
-    border-bottom: solid #6cb6ff;
-    color: #6cb6ff;
-    text-style: bold;
-    margin-bottom: 1;
 }
 
-#thinking-bar.visible {
-    display: block;
+#thinking-detail {
+    width: 100%;
+    height: auto;
+    padding: 0 0 1 0;
+    color: #6cb6ff;
 }
 
 #tracker-panel {
@@ -244,10 +238,12 @@ Footer {
     border: solid #2d3a4f;
     background: #0a0e14;
     margin-bottom: 1;
+    overflow-x: hidden;
 }
 
 #activity-log {
     padding: 0 1;
+    width: 100%;
 }
 
 #chat-scroll {

@@ -1,4 +1,4 @@
-"""Format agent trace lines for the REPL (structured, not plain bullets)."""
+"""Format agent trace lines — compact, no horizontal overflow."""
 
 from __future__ import annotations
 
@@ -6,18 +6,17 @@ from src.repl.markup_safe import escape_markup
 
 _TRACE_RULES: list[tuple[str, str, str]] = [
     ("shield", "SHIELD", "#d2a8ff"),
+    ("editing file", "EDIT", "#ffa657"),
+    ("reading file", "READ", "#3fb950"),
+    ("executing shell", "RUN", "#ffa657"),
     ("tool", "TOOL", "#ffa657"),
-    ("running tool", "TOOL", "#ffa657"),
-    ("validating", "SHIELD", "#d2a8ff"),
+    ("tokens", "TOK", "#e3b341"),
     ("calling", "MODEL", "#79c0ff"),
-    ("waiting", "NETWORK", "#6cb6ff"),
-    ("response received", "NETWORK", "#6cb6ff"),
-    ("loading", "CONTEXT", "#3fb950"),
-    ("context", "CONTEXT", "#3fb950"),
+    ("waiting", "NET", "#6cb6ff"),
+    ("response", "NET", "#6cb6ff"),
+    ("loading", "CTX", "#3fb950"),
     ("parsing", "PARSE", "#e3b341"),
-    ("computing", "PLAN", "#e3b341"),
-    ("starting", "START", "#58a6ff"),
-    ("done", "DONE", "#3fb950"),
+    ("done", "OK", "#3fb950"),
 ]
 
 
@@ -31,8 +30,6 @@ def trace_lane_markup(text: str) -> str:
             color = col
             break
     safe = escape_markup(text)
-    return (
-        f"[dim]╭─[/][bold {color}] {lane} [/][dim]────────────────[/]\n"
-        f"[white]  {safe}[/]\n"
-        f"[dim]╰────────────────────────────────[/]"
-    )
+    if len(safe) > 72:
+        safe = safe[:69] + "…"
+    return f"[bold {color}]{lane:5}[/] [white]{safe}[/]"

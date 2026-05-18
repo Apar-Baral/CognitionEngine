@@ -45,7 +45,7 @@ from src.repl.clipboard_util import copy_to_clipboard, save_copy_fallback
 from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP
 from src.repl.session_bridge import SessionBridge
 from src.repl.markup_safe import escape_markup
-from src.repl.thinking_anim import thinking_panel_markup, thinking_trace_line
+from src.repl.thinking_anim import thinking_box_markup, thinking_panel_markup
 from src.repl.tips import CE_TIPS
 from src.repl.trace_viz import trace_lane_markup
 
@@ -315,6 +315,7 @@ class CognitionReplApp(App):
         self._typing_pos = 0
         self._thinking_min_until = 0.0
         self._last_activity = "Ready"
+        self._activity_recent: list[str] = []
         self._token_refresh_timer: Timer | None = None
 
     def _build_agent(self):
@@ -337,18 +338,12 @@ class CognitionReplApp(App):
 
     def _apply_activity(self, msg: str) -> None:
         self._last_activity = msg
+        self._activity_recent.append(msg)
+        if len(self._activity_recent) > 12:
+            self._activity_recent = self._activity_recent[-12:]
         self._log_work(msg)
         if self._chat_busy:
-            try:
-                tick = self._thinking_tick
-                self.query_one("#chat-thinking", Static).update(
-                    thinking_panel_markup(tick, status=msg)
-                )
-                self.query_one("#thinking-bar", Static).update(
-                    thinking_trace_line(tick, status=msg)
-                )
-            except Exception:
-                pass
+            self._update_thinking_box()
 
     def _on_agent_tokens(self, usage: dict[str, int]) -> None:
         try:
@@ -431,15 +426,6 @@ class CognitionReplApp(App):
                     yield Static(COMMAND_HINTS, id="command-hints", markup=True)
             with Vertical(id="chat-column"):
                 yield Static(self._top_bar_text(), id="top-bar", markup=True)
-                yield Static(self._tracker_text(), id="tracker-panel", markup=True)
-                with Horizontal(id="thinking-row"):
-                    yield LoadingIndicator(id="think-spinner")
-                    yield Static("", id="chat-thinking", markup=True)
-                yield Static(
-                    "[dim]Your message appears below when you send[/]",
-                    id="prompt-display",
-                    markup=True,
-                )
                 with VerticalScroll(id="chat-scroll", can_focus=True):
                     yield ChatRichLog(
                         id="log",
@@ -447,7 +433,19 @@ class CognitionReplApp(App):
                         markup=True,
                         wrap=True,
                         auto_scroll=True,
+                        min_width=20,
                     )
+                yield Static(self._token_bar_text(), id="token-bar", markup=True)
+                with Vertical(id="thinking-box"):
+                    with Horizontal(id="thinking-head"):
+                        yield LoadingIndicator(id="think-spinner")
+                        yield Static("", id="chat-thinking", markup=True)
+                    yield Static("", id="thinking-detail", markup=True)
+                yield Static(
+                    "[dim]Your message[/]",
+                    id="prompt-display",
+                    markup=True,
+                )
                 with Horizontal(id="composer"):
                     yield Static("❯", id="prompt-glyph")
                     yield Input(
@@ -456,7 +454,6 @@ class CognitionReplApp(App):
                     )
             with Vertical(id="trace-rail"):
                 yield Static("AGENT TRACE", classes="rail-section-title")
-                yield Static("", id="thinking-bar", markup=True)
                 with VerticalScroll(id="activity-scroll", can_focus=True):
                     yield ChatRichLog(
                         id="activity-log",
@@ -464,6 +461,7 @@ class CognitionReplApp(App):
                         markup=True,
                         wrap=True,
                         auto_scroll=True,
+                        min_width=1,
                     )
                 yield Static(
                     "[dim]Click chat · drag to select · Ctrl+Shift+C or Copy reply button[/]",
@@ -519,17 +517,32 @@ class CognitionReplApp(App):
         mid = resolve_model_id(raw, reg) or raw
         meta = reg.get_model(mid) or {}
         name = meta.get("display_name") or mid
+        return f"[bold #6cb6ff]{name}[/] [dim]({mid})[/]"
+
+    def _token_bar_text(self) -> str:
         t = self._session_token_totals()
-        last = f" +{t['last_turn']:,} last" if t["last_turn"] else ""
-        tok = (
-            f"[bold #e3b341]⚡[/] [white]{t['total']:,}[/] "
-            f"[dim](↑{t['input']:,} ↓{t['output']:,}{last})[/]"
+        last = f"  [dim]last turn[/] [bold]+{t['last_turn']:,}[/]" if t["last_turn"] else ""
+        return (
+            f"[bold #e3b341]⚡ Tokens[/]  [white]{t['total']:,}[/] total  "
+            f"[dim]↑[/][#79c0ff]{t['input']:,}[/] in  "
+            f"[dim]↓[/][#a5d6ff]{t['output']:,}[/] out[/]"
+            f"{last}"
         )
-        return f"[bold #6cb6ff]{name}[/] [dim]│[/] {tok}"
 
     def _refresh_token_bar(self) -> None:
         try:
-            self.query_one("#top-bar", Static).update(self._top_bar_text())
+            self.query_one("#token-bar", Static).update(self._token_bar_text())
+        except Exception:
+            pass
+
+    def _update_thinking_box(self) -> None:
+        try:
+            _, detail = thinking_box_markup(
+                self._thinking_tick,
+                status=self._last_activity,
+                recent=self._activity_recent,
+            )
+            self.query_one("#thinking-detail", Static).update(detail)
         except Exception:
             pass
 
@@ -568,7 +581,6 @@ class CognitionReplApp(App):
     def _refresh_chrome(self, *, sync_select: bool = False) -> None:
         self.query_one("#top-bar", Static).update(self._top_bar_text())
         self._refresh_token_bar()
-        self.query_one("#tracker-panel", Static).update(self._tracker_text())
         self.query_one("#setup-panel", Static).update(self._setup_panel_text())
         if sync_select:
             self._sync_model_select()
@@ -621,7 +633,7 @@ class CognitionReplApp(App):
 
     def _clear_chat_thinking(self) -> None:
         try:
-            self.query_one("#chat-thinking", Static).update("")
+            self.query_one("#thinking-detail", Static).update("")
         except Exception:
             pass
 
@@ -630,7 +642,10 @@ class CognitionReplApp(App):
         self._last_assistant_plain = text
         self._typing_full = text
         self._typing_pos = 0
-        self._clear_chat_thinking()
+        try:
+            self.query_one("#thinking-box", Vertical).add_class("visible")
+        except Exception:
+            pass
         if self._typing_timer is not None:
             self._typing_timer.stop()
         self._typing_timer = self.set_interval(0.018, self._typing_tick)
@@ -640,7 +655,7 @@ class CognitionReplApp(App):
             if self._typing_timer is not None:
                 self._typing_timer.stop()
                 self._typing_timer = None
-            self._clear_chat_thinking()
+            self._hide_thinking_ui()
             self._log_assistant(self._typing_full)
             return
         step = max(2, len(self._typing_full) // 120)
@@ -650,8 +665,10 @@ class CognitionReplApp(App):
         display = escape_markup(partial.replace("\n", " "))
         if len(display) > 200:
             display = "…" + display[-200:]
-        self.query_one("#chat-thinking", Static).update(
-            f"[bold #79c0ff]▌[/] [italic]typing…[/] [#79c0ff]{display}[/][bold #79c0ff]▌[/]"
+        self.query_one("#thinking-detail", Static).update(
+            f"[bold #58a6ff]╭─ Response ─────────────────────╮[/]\n"
+            f"[bold #58a6ff]│[/] [#79c0ff]{display}[/][bold #79c0ff]▌[/]\n"
+            f"[bold #58a6ff]╰────────────────────────────────╯[/]"
         )
         self.query_one("#chat-scroll", VerticalScroll).scroll_end(animate=False)
 
@@ -700,40 +717,26 @@ class CognitionReplApp(App):
 
     def _start_thinking(self) -> None:
         self._thinking_tick = 0
+        self._activity_recent = []
         self._thinking_min_until = time.monotonic() + 1.2
-        row = self.query_one("#thinking-row", Horizontal)
-        row.add_class("visible")
-        self.query_one("#thinking-bar", Static).add_class("visible")
-        self._tick_thinking()
-        self._log(
-            "[bold #6cb6ff]▸ Agent working[/] [dim]— spinner + panel below · Esc to cancel[/]"
-        )
+        self.query_one("#thinking-box", Vertical).add_class("visible")
+        self._update_thinking_box()
         if self._thinking_timer is not None:
             self._thinking_timer.stop()
         self._thinking_timer = self.set_interval(0.1, self._tick_thinking)
 
     def _tick_thinking(self) -> None:
         self._thinking_tick += 1
-        status = self._last_activity
-        self.query_one("#chat-thinking", Static).update(
-            thinking_panel_markup(self._thinking_tick, status=status)
-        )
-        self.query_one("#thinking-bar", Static).update(
-            thinking_trace_line(self._thinking_tick, status=status)
-        )
+        self._update_thinking_box()
 
     def _hide_thinking_ui(self) -> None:
         if self._thinking_timer is not None:
             self._thinking_timer.stop()
             self._thinking_timer = None
         try:
-            self.query_one("#thinking-row", Horizontal).remove_class("visible")
-        except Exception:
-            pass
-        try:
-            bar = self.query_one("#thinking-bar", Static)
-            bar.update("")
-            bar.remove_class("visible")
+            box = self.query_one("#thinking-box", Vertical)
+            box.remove_class("visible")
+            self.query_one("#thinking-detail", Static).update("")
         except Exception:
             pass
         if not self._typing_timer:
@@ -757,8 +760,9 @@ class CognitionReplApp(App):
 
     def _begin_chat(self, line: str) -> None:
         self._set_chat_busy(True)
-        self._log_work("Starting agent turn…")
+        self._activity_recent = []
         self._start_thinking()
+        self._log_work("Starting agent turn…")
 
         def run_chat() -> ChatJobResult:
             return self._chat_sync(line)
@@ -788,7 +792,10 @@ class CognitionReplApp(App):
         self._sync_model_select()
         self._tips_timer = self.set_interval(12.0, self._tick_tip)
         self._token_refresh_timer = self.set_interval(1.5, self._refresh_token_bar)
-        self._refresh_token_bar()
+        try:
+            self.query_one("#token-bar", Static).update(self._token_bar_text())
+        except Exception:
+            pass
         log = self.query_one("#log", RichLog)
         log.write("[bold #6cb6ff]Cognition Engine[/] ready")
         log.write(
