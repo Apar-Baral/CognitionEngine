@@ -48,14 +48,14 @@ COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-show-plan", "Show plan", ""),
     ("btn-status", "Track progress", ""),
     ("btn-end", "End session", ""),
-    ("btn-commit", "Git commit", ""),
+    ("btn-commit", "Git hint", ""),
     ("btn-setup", "Setup keys", "primary"),
     ("btn-quit", "Exit CE", "danger"),
 ]
 
-COMMAND_HINTS = """[dim]Chat:[/] Enter · work log shows agent steps
-[dim]Plan:[/] Generate / Show plan · Track progress
-[dim]Quit:[/] Exit CE · Ctrl+Q · Esc cancels chat"""
+COMMAND_HINTS = """[dim]Chat:[/] center · trace panel right
+[dim]Copy:[/] drag-select text in chat/trace
+[dim]Git:[/] you commit in your shell — CE won't"""
 
 _THINK_FRAMES = ("◐", "◓", "◑", "◒")
 
@@ -265,6 +265,8 @@ class QuickSetupScreen(ModalScreen[bool]):
 class CognitionReplApp(App):
     """Professional agent console — no /help required."""
 
+    ENABLE_TEXT_SELECTION = True
+
     TITLE = "Cognition Engine"
     SUB_TITLE = "Agent console"
     CSS = CE_APP_CSS
@@ -290,6 +292,7 @@ class CognitionReplApp(App):
         self._thinking_timer: Timer | None = None
         self._thinking_tick = 0
         self._chat_busy = False
+        self._last_user_prompt = ""
 
     def _build_agent(self):
         try:
@@ -368,14 +371,15 @@ class CognitionReplApp(App):
                                 classes = "-danger"
                             yield Button(label, id=bid, classes=classes)
                     yield Static(COMMAND_HINTS, id="command-hints", markup=True)
-            with Vertical(id="main-column"):
+            with Vertical(id="chat-column"):
                 yield Static(self._top_bar_text(), id="top-bar", markup=True)
                 yield Static(self._tracker_text(), id="tracker-panel", markup=True)
-                yield Static("[dim]Work log[/]", classes="rail-section-title")
-                with VerticalScroll(id="activity-scroll", can_focus=False):
-                    yield RichLog(id="activity-log", highlight=False, markup=True, wrap=True)
+                yield Static(
+                    "[dim]Your message appears below when you send[/]",
+                    id="prompt-display",
+                    markup=True,
+                )
                 with VerticalScroll(id="chat-scroll", can_focus=True):
-                    yield Static("", id="thinking-bar", markup=True)
                     yield RichLog(id="log", highlight=True, markup=True, wrap=True)
                 with Horizontal(id="composer"):
                     yield Static("❯", id="prompt-glyph")
@@ -383,6 +387,16 @@ class CognitionReplApp(App):
                         placeholder="Ask anything — slash commands optional",
                         id="input",
                     )
+            with Vertical(id="trace-rail"):
+                yield Static("AGENT TRACE", classes="rail-section-title")
+                yield Static("", id="thinking-bar", markup=True)
+                with VerticalScroll(id="activity-scroll", can_focus=True):
+                    yield RichLog(id="activity-log", highlight=False, markup=True, wrap=True)
+                yield Static(
+                    "[dim]Drag to select · copy with terminal or Ctrl+Shift+C[/]",
+                    id="trace-hint",
+                    markup=True,
+                )
         yield Footer()
 
     def _setup_panel_text(self) -> str:
@@ -465,10 +479,15 @@ class CognitionReplApp(App):
         self.query_one("#chat-scroll", VerticalScroll).scroll_end(animate=False)
 
     def _log_user(self, text: str) -> None:
-        body = text.replace("\n", "\n[white]│ [/white]")
+        self._last_user_prompt = text
+        preview = text if len(text) <= 500 else text[:497] + "…"
+        body = preview.replace("\n", "\n[bold white]  [/bold white]")
+        self.query_one("#prompt-display", Static).update(
+            f"[bold #6cb6ff]You[/]  {body}"
+        )
         self._log(
             "\n[bold #6cb6ff]┏━ You ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
-            f"[white]│ [/white]{body}\n"
+            f"[bold white]{body}[/]\n"
             "[bold #6cb6ff]┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
         )
 

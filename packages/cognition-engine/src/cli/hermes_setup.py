@@ -146,7 +146,7 @@ def persist_setup_choices(
                 yaml.safe_dump(
                     {
                         "default_model": mid,
-                        "git": {"auto_commit": True, "auto_commit_message_prefix": "ce:"},
+                        "git": {"auto_commit": False, "auto_commit_message_prefix": "ce:"},
                     },
                     default_flow_style=False,
                 ),
@@ -242,7 +242,7 @@ def hermes_quick_setup(
                 yaml.safe_dump(
                     {
                         "default_model": model_id,
-                        "git": {"auto_commit": True, "auto_commit_message_prefix": "ce:"},
+                        "git": {"auto_commit": False, "auto_commit_message_prefix": "ce:"},
                     },
                     default_flow_style=False,
                 ),

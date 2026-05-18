@@ -215,6 +215,11 @@ class SessionBridge:
             msg = auto_commit(self.root, summary, prefix=auto_commit_prefix(self.ctx.config))
             if msg:
                 lines.append(msg)
+        else:
+            lines.append(
+                "Git: CE did not commit (auto_commit is off). "
+                "Commit yourself: git add -A && git commit -m \"your message\""
+            )
         return "\n".join(lines)
 
     def cmd_memory(self) -> str:
@@ -287,13 +292,21 @@ class SessionBridge:
         return f"Session budget cap: {budget:,} tokens"
 
     def cmd_commit(self, message: str) -> str:
-        from src.cli.git_helpers import auto_commit, is_git_repo
+        from src.cli.git_helpers import is_git_repo
 
         if not is_git_repo(self.root):
-            for m in git_init_project(self.root, initial_commit=False):
-                pass
-        msg = auto_commit(self.root, message or "session work", prefix="ce:")
-        return msg or "Nothing committed."
+            return (
+                "No git repo here. In your terminal:\n"
+                "  git init && git add -A && git commit -m \"initial commit\""
+            )
+        text = (message or "describe your changes").strip().replace('"', "'")
+        return (
+            "CE does not run git commit for you — your name and email from git config are used.\n"
+            f"In your terminal:\n"
+            f'  cd "{self.root}"\n'
+            f'  git add -A\n'
+            f'  git commit -m "{text}"'
+        )
 
     def cmd_project(self, path: str) -> str:
         if not path.strip():

@@ -2,20 +2,90 @@
 
 from __future__ import annotations
 
+import os
+import re
+import shlex
 import subprocess
 from pathlib import Path
 
+# Base executables allowed in pipelines (first token of each segment).
 ALLOWED_COMMANDS = frozenset(
     {
-        "pytest",
+        "awk",
+        "bash",
+        "cat",
+        "cd",
+        "curl",
+        "cut",
+        "echo",
+        "find",
+        "git",
+        "grep",
+        "head",
+        "less",
+        "ls",
+        "make",
+        "mkdir",
+        "node",
+        "npm",
+        "npx",
+        "pip",
+        "pip3",
+        "pwd",
         "python",
         "python3",
-        "git",
-        "ls",
-        "cat",
-        "pwd",
+        "pytest",
+        "rg",
+        "sed",
+        "sh",
+        "sort",
+        "tail",
+        "tee",
+        "touch",
+        "uniq",
+        "wc",
+        "which",
+        "xargs",
     }
 )
+
+_BLOCKED_PATTERNS = (
+    r"rm\s+-rf",
+    r"rm\s+--no-preserve-root",
+    r">\s*/dev/",
+    r"mkfs\.",
+    r":\(\)\s*\{",
+    r"dd\s+if=",
+    r"chmod\s+777\s+/",
+    r"wget\s+.*\|\s*sh",
+    r"curl\s+.*\|\s*sh",
+)
+
+
+def command_is_allowed(cmd_line: str) -> tuple[bool, str]:
+    """Validate shell one-liner: each pipeline segment must start with an allowed command."""
+    line = cmd_line.strip()
+    if not line:
+        return False, "empty command"
+    lower = line.lower()
+    for pat in _BLOCKED_PATTERNS:
+        if re.search(pat, lower):
+            return False, "blocked for safety"
+    segments = re.split(r"\s*(?:\||&&|\|\|)\s*", line)
+    for segment in segments:
+        seg = segment.strip()
+        if not seg:
+            continue
+        try:
+            parts = shlex.split(seg)
+        except ValueError as exc:
+            return False, f"bad quoting: {exc}"
+        if not parts:
+            continue
+        base = parts[0]
+        if base not in ALLOWED_COMMANDS:
+            return False, f"'{base}' not in allowlist"
+    return True, ""
 
 
 class ToolRunner:
@@ -55,21 +125,30 @@ class ToolRunner:
         return f"Wrote {rel_path} ({len(content)} bytes)"
 
     def run_command(self, cmd_line: str) -> str:
-        parts = cmd_line.strip().split()
-        if not parts or parts[0] not in ALLOWED_COMMANDS:
-            return f"Error: command not allowed. Allowed: {', '.join(sorted(ALLOWED_COMMANDS))}"
+        ok, reason = command_is_allowed(cmd_line)
+        if not ok:
+            allowed = ", ".join(sorted(ALLOWED_COMMANDS))
+            return (
+                f"Error: command not allowed ({reason}).\n"
+                f"Pipelines OK (| &&). Examples: grep -r foo . | head\n"
+                f"Allowed: {allowed}"
+            )
         try:
             proc = subprocess.run(
-                parts,
+                cmd_line,
+                shell=True,
                 cwd=self.root,
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=180,
+                env={**os.environ, "PYTHONUNBUFFERED": "1"},
             )
             out = (proc.stdout or "") + (proc.stderr or "")
-            return out[:4000] or f"(exit {proc.returncode})"
+            if proc.returncode != 0 and not out.strip():
+                out = f"(exit {proc.returncode})"
+            return out[:8000] or f"(exit {proc.returncode})"
         except subprocess.TimeoutExpired:
-            return "Error: command timed out"
+            return "Error: command timed out (180s)"
         except Exception as exc:
             return f"Error: {exc}"
 

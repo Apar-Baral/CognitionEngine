@@ -23,7 +23,8 @@ TOOL_SPEC = """
 You may request tools by replying with JSON only:
 {"tool": "read_file", "args": {"path": "docs/discovery.md"}}
 {"tool": "write_file", "args": {"path": "file.py", "content": "..."}}
-{"tool": "run_command", "args": {"cmd": "pytest -q"}}
+{"tool": "run_command", "args": {"cmd": "grep -r pattern . | head"}}
+Pipelines allowed. Commands include: python, pytest, git, grep, cat, find, ls, curl, npm, etc.
 {"tool": "suggest_next", "args": {}}
 Otherwise reply with normal markdown for the user.
 """

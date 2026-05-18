@@ -14,6 +14,7 @@ CE_BRAND_MARKUP = """[bold #58a6ff]╔══════════════
 CE_APP_CSS = """
 Screen {
     background: #0a0e14;
+    text-selection-background: #3d5a80;
 }
 
 Header {
@@ -129,8 +130,37 @@ Footer {
     border-top: solid #2d3a4f;
 }
 
-#main-column {
+#chat-column {
     width: 1fr;
+    min-width: 40;
+}
+
+#trace-rail {
+    width: 34;
+    min-width: 30;
+    max-width: 40;
+    height: 1fr;
+    background: #080c10;
+    border-left: solid #2d3a4f;
+    padding: 0 1;
+}
+
+#trace-hint {
+    height: auto;
+    color: #768390;
+    padding: 0 0 1 0;
+    text-align: center;
+}
+
+#prompt-display {
+    height: auto;
+    min-height: 2;
+    max-height: 6;
+    padding: 1 2;
+    margin-bottom: 1;
+    background: #152238;
+    border: tall #6cb6ff;
+    color: #e6edf3;
 }
 
 #top-bar {
@@ -151,8 +181,7 @@ Footer {
 }
 
 #activity-scroll {
-    height: 5;
-    max-height: 6;
+    height: 1fr;
     border: solid #2d3a4f;
     background: #0a0e14;
     margin-bottom: 1;
