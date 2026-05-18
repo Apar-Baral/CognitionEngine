@@ -21,15 +21,28 @@ class ChatRichLog(RichLog):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.plain_lines: list[str] = []
+        self._merge_stream_plain: bool = False
+
+    def start_stream_plain_merge(self) -> None:
+        """Following write() chunks merge into the last plain_lines entry (streaming body)."""
+        self._merge_stream_plain = True
+
+    def end_stream_plain_merge(self) -> None:
+        self._merge_stream_plain = False
 
     def write(self, content, *args, **kwargs):
         result = super().write(content, *args, **kwargs)
         if isinstance(content, str):
-            self.plain_lines.append(strip_markup(content))
+            p = strip_markup(content)
+            if self._merge_stream_plain and self.plain_lines:
+                self.plain_lines[-1] += p
+            else:
+                self.plain_lines.append(p)
         return result
 
     def clear(self):
         self.plain_lines.clear()
+        self._merge_stream_plain = False
         return super().clear()
 
     def plain_text(self) -> str:

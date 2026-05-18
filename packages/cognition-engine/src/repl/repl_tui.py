@@ -35,6 +35,7 @@ from src.cli.model_picker import (
     apply_model_choice,
     format_models_table,
     models_grouped_by_tier,
+    normalize_model_id,
     select_options_for_widget,
 )
 from src.cli.setup_summary import (
@@ -51,7 +52,6 @@ from src.repl.session_bridge import SLASH_COMMANDS, SessionBridge
 from src.repl.markup_safe import escape_markup
 from src.repl.live_thinking import LiveAgentView, live_thinking_markup
 from src.repl.rail_sidebar import format_left_rail
-from src.repl.thinking_anim import thinking_panel_markup
 from src.repl.tips import CE_TIPS
 from src.repl.welcome import welcome_markup
 from src.repl.trace_viz import trace_lane_markup
@@ -372,14 +372,13 @@ class CognitionReplApp(App):
         self._last_assistant_plain = ""
         self._typing_timer: Timer | None = None
         self._typing_full = ""
-        self._typing_pos = 0
-        self._typing_pulse = 0
+        self._assist_header_done = False
+        self._assist_body_typed = 0
         self._thinking_min_until = 0.0
         self._last_activity = "Ready"
         self._activity_recent: list[str] = []
         self._live_view = LiveAgentView(max_steps=40)
         self._task_board = TaskBoard()
-        self._stream_flush_at = 0.0
         self._token_refresh_timer: Timer | None = None
 
     def _build_agent(self):
@@ -437,7 +436,7 @@ class CognitionReplApp(App):
         lower = msg.lower()
         if "model step" in lower:
             self._live_view.stream = ""
-            self._typing_pos = 0
+            self._assist_body_typed = 0
             self._live_view.planned = []
             sm = re.search(r"step\s+(\d+)\s*/\s*(\d+)", lower)
             if sm:
@@ -468,10 +467,6 @@ class CognitionReplApp(App):
         self._live_view.stream += chunk
         if len(self._live_view.stream) > 4000:
             self._live_view.stream = self._live_view.stream[-4000:]
-        now = time.monotonic()
-        if now - self._stream_flush_at < 0.06:
-            return
-        self._stream_flush_at = now
         self._update_thinking_box()
 
     def _on_agent_tokens(self, usage: dict[str, int]) -> None:
@@ -561,6 +556,7 @@ class CognitionReplApp(App):
                         id="model-select",
                         prompt="▼ Choose model",
                         value=model_value,
+                        allow_blank=False,
                     )
                     yield ChromeStatic(
                         self._header_meta_text(),
@@ -679,9 +675,9 @@ class CognitionReplApp(App):
             self.query_one("#task-list", Static).update(
                 task_board_markup(self._task_board, title="Agent")
             )
-            if self._chat_busy and self._typing_timer is not None:
-                if (self._live_view.stream or "").strip() or self._typing_pos > 0:
-                    return
+            if self._chat_busy and (self._live_view.stream or "").strip():
+                self.query_one("#thinking-detail", Static).update("")
+                return
             _, detail = live_thinking_markup(self._thinking_tick, self._live_view)
             self.query_one("#thinking-detail", Static).update(detail)
         except Exception:
@@ -743,11 +739,11 @@ class CognitionReplApp(App):
         self.query_one("#activity-log", ChatRichLog).write(trace_lane_markup(text))
         self.query_one("#activity-log", ChatRichLog).scroll_end(animate=False)
 
-    def _apply_model_from_ui(self, model_id: str) -> None:
-        from src.cli.model_picker import apply_model_choice, resolve_model_id
+    def _apply_model_from_ui(self, model_id: object) -> None:
+        from src.cli.model_picker import apply_model_choice
 
         reg = self.bridge.ctx.model_registry()
-        mid = resolve_model_id(str(model_id), reg)
+        mid = normalize_model_id(model_id, reg)
         if not mid or mid == self._active_model_id:
             return
         self._active_model_id = mid
@@ -793,79 +789,66 @@ class CognitionReplApp(App):
         except Exception:
             pass
 
-    def _log_assistant_typing(self, text: str) -> None:
-        """Reveal assistant reply character-by-character (Claude Code–style)."""
-        clean = clean_assistant_text(text)
-        self._last_assistant_plain = clean or text
-        self._typing_full = self._last_assistant_plain
-        self._typing_pos = 0
-        try:
-            self.query_one("#thinking-box", Vertical).add_class("visible")
-        except Exception:
-            pass
+    def _clean_live_stream(self) -> str:
+        s = self._live_view.stream or ""
+        if not s.strip():
+            return ""
+        low = s.lower()
+        if "dsml" in low or "<|" in s:
+            return ""
+        return s
+
+    def _canonical_assist_buffer(self) -> str:
+        if self._chat_busy:
+            return self._clean_live_stream()
+        return self._typing_full or ""
+
+    def _assist_stream_step(self, goal_len: int) -> int:
+        if goal_len <= 0:
+            return 1
+        return max(1, min(12, goal_len // 25 + 1))
+
+    def _write_assistant_stream_header(self) -> None:
+        self._log(
+            "\n[bold #79c0ff]┏━ Assistant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
+            "[#79c0ff]│ [/]"
+        )
+        self.query_one("#log", ChatRichLog).start_stream_plain_merge()
+
+    def _finalize_assistant_stream_in_log(self) -> None:
         if self._typing_timer is not None:
             self._typing_timer.stop()
-        self._typing_timer = self.set_interval(0.018, self._typing_tick)
+            self._typing_timer = None
+        log = self.query_one("#log", ChatRichLog)
+        log.end_stream_plain_merge()
+        self._log("[bold #79c0ff]┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n")
+        if (self._last_assistant_plain or "").strip():
+            save_copy_fallback(self._last_assistant_plain)
+        self._assist_header_done = False
+        self._assist_body_typed = 0
+        self._typing_full = ""
 
     def _typing_tick(self) -> None:
-        if self._chat_busy:
-            src = self._live_view.stream
-            low = src.lower()
-            if "dsml" in low or "<|" in src:
-                return
-            if not src.strip():
-                self._typing_pulse += 1
-                dots = "·" * (self._typing_pulse % 4)
-                try:
-                    self.query_one("#thinking-detail", Static).update(
-                        "[bold #58a6ff]╭─ Response ─────────────────────╮[/]\n"
-                        f"[bold #58a6ff]│[/] [dim]{dots}[/][#79c0ff]▌[/]\n"
-                        "[bold #58a6ff]╰────────────────────────────────╯[/]"
-                    )
-                except Exception:
-                    pass
-                return
-            step = max(2, min(80, max(len(src) // 20, 4)))
-            self._typing_pos = min(len(src), self._typing_pos + step)
-            partial = src[: self._typing_pos]
-            display = escape_markup(partial.replace("\n", " "))
-            if len(display) > 220:
-                display = "…" + display[-220:]
-            try:
-                self.query_one("#thinking-detail", Static).update(
-                    f"[bold #58a6ff]╭─ Response (streaming) ─────────╮[/]\n"
-                    f"[bold #58a6ff]│[/] [#79c0ff]{display}[/][bold #79c0ff]▌[/]\n"
-                    f"[bold #58a6ff]╰────────────────────────────────╯[/]"
-                )
-                self.query_one("#log", ChatRichLog).scroll_end(animate=False)
-            except Exception:
-                pass
+        buf = self._canonical_assist_buffer()
+        if not buf.strip():
             return
-        if not self._typing_full:
-            if self._typing_timer is not None:
-                self._typing_timer.stop()
-                self._typing_timer = None
-            return
-        if self._typing_pos >= len(self._typing_full):
-            if self._typing_timer is not None:
-                self._typing_timer.stop()
-                self._typing_timer = None
+        if not self._assist_header_done:
+            self._write_assistant_stream_header()
+            self._assist_header_done = True
+        goal = len(buf)
+        step = self._assist_stream_step(goal)
+        end = min(goal, self._assist_body_typed + step)
+        if end > self._assist_body_typed:
+            delta = buf[self._assist_body_typed : end]
+            self._assist_body_typed = end
+            self._log(escape_markup(delta))
+        if (
+            not self._chat_busy
+            and (self._typing_full or "").strip()
+            and self._assist_body_typed >= len(self._typing_full)
+        ):
+            self._finalize_assistant_stream_in_log()
             self._hide_thinking_ui()
-            self._log_assistant(self._typing_full)
-            return
-        step = max(2, len(self._typing_full) // 120)
-        end = min(self._typing_pos + step, len(self._typing_full))
-        self._typing_pos = end
-        partial = self._typing_full[:end]
-        display = escape_markup(partial.replace("\n", " "))
-        if len(display) > 200:
-            display = "…" + display[-200:]
-        self.query_one("#thinking-detail", Static).update(
-            f"[bold #58a6ff]╭─ Response ─────────────────────╮[/]\n"
-            f"[bold #58a6ff]│[/] [#79c0ff]{display}[/][bold #79c0ff]▌[/]\n"
-            f"[bold #58a6ff]╰────────────────────────────────╯[/]"
-        )
-        self.query_one("#log", ChatRichLog).scroll_end(animate=False)
 
     def _log_system(self, text: str) -> None:
         self._log(f"[dim]· {text}[/]")
@@ -924,30 +907,22 @@ class CognitionReplApp(App):
         self._activity_recent = []
         self._live_view = LiveAgentView(max_steps=40)
         self._task_board = TaskBoard()
-        self._stream_flush_at = 0.0
         self._thinking_min_until = time.monotonic() + 1.2
+        self._assist_header_done = False
+        self._assist_body_typed = 0
+        self._typing_full = ""
+        try:
+            self.query_one("#log", ChatRichLog).end_stream_plain_merge()
+        except Exception:
+            pass
         self.query_one("#thinking-box", Vertical).add_class("visible")
-        self._typing_pulse = 0
-        self._show_streaming_placeholder_frame()
         self._update_thinking_box()
         if self._thinking_timer is not None:
             self._thinking_timer.stop()
         self._thinking_timer = self.set_interval(0.1, self._tick_thinking)
-        self._typing_pos = 0
         if self._typing_timer is not None:
             self._typing_timer.stop()
         self._typing_timer = self.set_interval(0.016, self._typing_tick)
-
-    def _show_streaming_placeholder_frame(self) -> None:
-        """First paint before any model tokens — instant feedback after Enter."""
-        try:
-            self.query_one("#thinking-detail", Static).update(
-                "[bold #58a6ff]╭─ Response ─────────────────────╮[/]\n"
-                "[bold #58a6ff]│[/] [#79c0ff]▌[/]\n"
-                "[bold #58a6ff]╰────────────────────────────────╯[/]"
-            )
-        except Exception:
-            pass
 
     def _tick_thinking(self) -> None:
         self._thinking_tick += 1
@@ -1153,6 +1128,19 @@ class CognitionReplApp(App):
             if self._typing_timer is not None:
                 self._typing_timer.stop()
                 self._typing_timer = None
+            try:
+                log = self.query_one("#log", ChatRichLog)
+                if self._assist_header_done:
+                    log.end_stream_plain_merge()
+                    self._log(
+                        "\n[dim #8b949e](cancelled)[/]\n"
+                        "[bold #79c0ff]┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
+                    )
+            except Exception:
+                pass
+            self._assist_header_done = False
+            self._assist_body_typed = 0
+            self._typing_full = ""
             self._set_chat_busy(False)
             self._hide_thinking_ui()
             self._log_system("Request cancelled.")
@@ -1162,6 +1150,13 @@ class CognitionReplApp(App):
             if self._typing_timer is not None:
                 self._typing_timer.stop()
                 self._typing_timer = None
+            try:
+                self.query_one("#log", ChatRichLog).end_stream_plain_merge()
+            except Exception:
+                pass
+            self._assist_header_done = False
+            self._assist_body_typed = 0
+            self._typing_full = ""
             self._set_chat_busy(False)
             self._hide_thinking_ui()
             err = event.worker.error
@@ -1169,28 +1164,53 @@ class CognitionReplApp(App):
             self.query_one("#input", Input).focus()
             return
         result: ChatJobResult = event.worker.result
-        if self._typing_timer is not None:
-            self._typing_timer.stop()
-            self._typing_timer = None
         self._set_chat_busy(False)
         if result.kind == "ok":
             p = result.payload or ""
             clean = clean_assistant_text(p) or p.strip()
-            self._last_assistant_plain = clean or p
-            if (self._last_assistant_plain or "").strip():
-                save_copy_fallback(self._last_assistant_plain)
-            streamed = bool((self._live_view.stream or "").strip())
-            if streamed and (self._last_assistant_plain or "").strip():
-                self._log_assistant(self._last_assistant_plain)
-                self._hide_thinking_ui()
-            elif (self._last_assistant_plain or "").strip():
-                self._log_assistant_typing(p)
-            else:
+            self._last_assistant_plain = clean or p.strip()
+            self._typing_full = self._last_assistant_plain
+            raw_stream = (self._live_view.stream or "").strip()
+            if not raw_stream and (self._last_assistant_plain or "").strip():
+                self._assist_body_typed = 0
+                self._assist_header_done = False
+            elif raw_stream and (self._last_assistant_plain or "").strip():
+                self._assist_body_typed = min(
+                    self._assist_body_typed, len(self._last_assistant_plain)
+                )
+            if not (self._last_assistant_plain or "").strip():
+                if self._typing_timer is not None:
+                    self._typing_timer.stop()
+                    self._typing_timer = None
                 self._hide_thinking_ui()
                 self._log_system("(empty reply)")
+            else:
+                if self._typing_timer is None:
+                    self._typing_timer = self.set_interval(0.016, self._typing_tick)
         elif result.kind == "error":
-            self._log_assistant_typing(f"[red]{result.payload}[/]")
+            if self._typing_timer is not None:
+                self._typing_timer.stop()
+                self._typing_timer = None
+            try:
+                self.query_one("#log", ChatRichLog).end_stream_plain_merge()
+            except Exception:
+                pass
+            self._assist_header_done = False
+            self._assist_body_typed = 0
+            self._typing_full = ""
+            self._hide_thinking_ui()
+            self._log_assistant(f"[red]Error[/]\n{result.payload}")
         elif result.kind == "no_agent":
+            if self._typing_timer is not None:
+                self._typing_timer.stop()
+                self._typing_timer = None
+            try:
+                self.query_one("#log", ChatRichLog).end_stream_plain_merge()
+            except Exception:
+                pass
+            self._assist_header_done = False
+            self._assist_body_typed = 0
+            self._typing_full = ""
             self._hide_thinking_ui()
             self._log_system(
                 "Chat needs an API key. Click [bold]Setup keys[/] or type /keys"

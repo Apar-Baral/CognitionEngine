@@ -120,9 +120,9 @@ Footer {
 
 /* ── Model row: dropdown must stay visible (no squeezed Select) ── */
 #header-strip {
-    height: 3;
+    height: auto;
     min-height: 3;
-    max-height: 3;
+    /* max-height was clipping the Select overlay on some terminals */
     background: #161b22;
     border: solid #388bfd;
     padding: 0 1;
