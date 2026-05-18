@@ -28,6 +28,7 @@ from textual.widgets import (
     Select,
     Static,
 )
+from textual.await_complete import AwaitComplete
 from textual.worker import Worker, WorkerState
 
 from src.cli.context import resolve_project_root
@@ -83,6 +84,13 @@ class ChatJobResult:
 
 class ConfirmQuitScreen(ModalScreen[bool]):
     """Confirm before closing the agent console."""
+
+    def dismiss(self, result: bool | None = None) -> AwaitComplete:  # type: ignore[override]
+        """Avoid ScreenStackError if dismiss runs twice (e.g. duplicate events)."""
+        if getattr(self, "_ce_quit_dismissed", False):
+            return AwaitComplete.nothing()
+        self._ce_quit_dismissed = True
+        return super().dismiss(result)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="quit-frame"):
@@ -714,8 +722,12 @@ class CognitionReplApp(App):
             self._active_model_id = current
         except Exception:
             pass
-        finally:
-            self._select_syncing = False
+        # Select.set_options / value= post Changed asynchronously; keep the guard
+        # until after those messages run so we do not re-enter apply_model_choice.
+        self.call_later(self._release_select_sync)
+
+    def _release_select_sync(self) -> None:
+        self._select_syncing = False
 
     def _refresh_chrome(self, *, sync_select: bool = False) -> None:
         try:
