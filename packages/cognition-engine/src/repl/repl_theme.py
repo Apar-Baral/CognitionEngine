@@ -1,11 +1,14 @@
 """Cognition Engine REPL visual theme."""
 
-CE_BRAND_MARKUP = """[bold #58a6ff]╭──────────────────────────╮[/]
-[bold #58a6ff]│[/] [bold white on #0d1520]  ▄▀█ █▀▀ █▄ █ █▀▀ █ █[/] [bold #58a6ff]│[/]
-[bold #58a6ff]│[/] [bold white on #0d1520]  █▀█ ██▄ █ ▀█ █▄▄ █▀█[/] [bold #58a6ff]│[/]
-[bold #58a6ff]│[/] [bold #6cb6ff]  COGNITION ENGINE[/]        [bold #58a6ff]│[/]
-[bold #58a6ff]│[/] [dim]  agent console · v3[/]          [bold #58a6ff]│[/]
-[bold #58a6ff]╰──────────────────────────╯[/]"""
+CE_BRAND_MARKUP = """[bold #58a6ff]╭────────────────────────────╮[/]
+[bold #58a6ff]│[/]  [bold #6cb6ff]●[/] [bold white]██████╗[/][bold #79c0ff]╗[/] [bold white]███████╗[/]   [bold #58a6ff]│[/]
+[bold #58a6ff]│[/]     [bold white]██╔═══[/][bold #79c0ff]██╗[/][bold white]██╔════╝[/]   [bold #58a6ff]│[/]
+[bold #58a6ff]│[/]     [bold white]██║[/]   [bold #79c0ff]██║[/][bold white]█████╗[/]     [bold #58a6ff]│[/]
+[bold #58a6ff]│[/]  [bold #6cb6ff]◆[/] [bold white]██║[/]   [bold #79c0ff]██║[/][bold white]██╔══╝[/]     [bold #58a6ff]│[/]
+[bold #58a6ff]│[/]     [bold white]╚██████╔╝[/][bold #79c0ff]███████╗[/]  [bold #58a6ff]│[/]
+[bold #58a6ff]│[/]      [dim]╚═════╝ ╚══════╝[/]       [bold #58a6ff]│[/]
+[bold #58a6ff]│[/]  [bold #6cb6ff]C O G N I T I O N[/] [bold #79c0ff]E N G I N E[/]  [bold #58a6ff]│[/]
+[bold #58a6ff]╰────────────────────────────╯[/]"""
 
 CE_APP_CSS = """
 Screen {
@@ -49,7 +52,7 @@ Footer {
 #ce-brand {
     width: 100%;
     height: auto;
-    min-height: 12;
+    min-height: 14;
     text-align: center;
     padding: 1 0;
     margin-bottom: 1;
@@ -196,7 +199,7 @@ Footer {
 }
 
 #thinking-row.visible {
-    display: horizontal;
+    display: block;
 }
 
 #think-spinner {

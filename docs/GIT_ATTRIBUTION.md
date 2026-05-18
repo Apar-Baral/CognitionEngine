@@ -1,22 +1,40 @@
 # Git commit attribution
 
-GitHub shows **author** and **committer** separately. Commits made from Cursor Cloud often show
-`committed by Cursor` even when the author is correct.
+If commits show **Dream Cognition Engine** or **Cursor** instead of your name, that comes from
+the **git identity on the machine that ran `git commit`** — not from the CE Python package.
 
-## Use your identity (recommended)
-
-On your machine (Kali):
+## Fix on Kali (your commits going forward)
 
 ```bash
 git config --global user.name "YOUR_GITHUB_USERNAME"
 git config --global user.email "YOUR_GITHUB_EMAIL"
+git config --global --list | grep user
 ```
 
-In Cursor: **Settings → General → Git** — set the same name and email.
+Use the **same email** linked to your GitHub account (Settings → Emails).
 
-CE auto-commits on `/end` use `git.user_name` / `git.user_email` from `~/.cognition/config.yaml`,
-or `CE_GIT_USER_NAME` / `CE_GIT_USER_EMAIL` environment variables.
+## Fix in Cursor (when the agent pushes from the IDE)
 
-## Optional: rewrite old commits
+**Settings → General → Git** — set your name and email there too.
 
-Only if you own the repo and accept a force-push. See GitHub docs for `git filter-repo`.
+## CE session commits (`/end` auto-commit)
+
+In `~/.cognition/config.yaml`:
+
+```yaml
+git:
+  user_name: YOUR_GITHUB_USERNAME
+  user_email: YOUR_GITHUB_EMAIL
+```
+
+Or export before running CE:
+
+```bash
+export CE_GIT_USER_NAME="YOUR_GITHUB_USERNAME"
+export CE_GIT_USER_EMAIL="YOUR_GITHUB_EMAIL"
+```
+
+## Old commits already on GitHub
+
+Those keep the old author until you rewrite history (optional, force-push required).
+New commits after fixing `git config` will show your name.
