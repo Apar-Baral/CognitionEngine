@@ -339,11 +339,32 @@ class CognitionReplApp(App):
     def _apply_activity(self, msg: str) -> None:
         self._last_activity = msg
         self._activity_recent.append(msg)
-        if len(self._activity_recent) > 12:
-            self._activity_recent = self._activity_recent[-12:]
+        if len(self._activity_recent) > 24:
+            self._activity_recent = self._activity_recent[-24:]
         self._log_work(msg)
+        if self._chat_busy and self._activity_is_live_chat(msg):
+            safe = escape_markup(msg)
+            self._log(f"[dim #8b949e]⚙ {safe}[/]")
         if self._chat_busy:
             self._update_thinking_box()
+
+    @staticmethod
+    def _activity_is_live_chat(msg: str) -> bool:
+        lower = msg.lower()
+        needles = (
+            "writing file",
+            "reading file",
+            "listing directory",
+            "running command",
+            "write result",
+            "command output",
+            "model step",
+            "agentic mode",
+            "agent finished",
+            "shield",
+            "done:",
+        )
+        return any(n in lower for n in needles)
 
     def _on_agent_tokens(self, usage: dict[str, int]) -> None:
         try:
@@ -763,6 +784,9 @@ class CognitionReplApp(App):
         self._activity_recent = []
         self._start_thinking()
         self._log_work("Starting agent turn…")
+        self._log(
+            "[dim #8b949e]Agentic mode — tools run live (see right panel + lines below).[/]"
+        )
 
         def run_chat() -> ChatJobResult:
             return self._chat_sync(line)

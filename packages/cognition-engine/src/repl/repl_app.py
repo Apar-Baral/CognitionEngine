@@ -37,11 +37,14 @@ def run_repl(project_root: Path | None = None) -> None:
     if not bridge.ctx.is_initialized():
         console.print("[yellow]Project not initialized.[/] Run: /setup")
 
+    def _live(msg: str) -> None:
+        console.print(f"[dim]⚙ {msg}[/]")
+
     agent = None
     try:
         from src.agent.orchestrator import AgentOrchestrator
 
-        agent = AgentOrchestrator(bridge.ctx)
+        agent = AgentOrchestrator(bridge.ctx, on_activity=_live)
     except Exception as exc:
         console.print(f"[dim]Chat disabled until API keys configured:[/] {exc}")
 
@@ -69,7 +72,7 @@ def run_repl(project_root: Path | None = None) -> None:
                 try:
                     from src.agent.orchestrator import AgentOrchestrator
 
-                    agent = AgentOrchestrator(bridge.ctx)
+                    agent = AgentOrchestrator(bridge.ctx, on_activity=_live)
                 except Exception as exc:
                     console.print(f"[yellow]{exc}[/]")
             continue
@@ -79,12 +82,12 @@ def run_repl(project_root: Path | None = None) -> None:
                 try:
                     from src.agent.orchestrator import AgentOrchestrator
 
-                    agent = AgentOrchestrator(bridge.ctx)
+                    agent = AgentOrchestrator(bridge.ctx, on_activity=_live)
                 except Exception as exc:
                     console.print(f"[red]{exc}[/]")
                     console.print("[dim]Fix:[/] /keys  or  /setup")
                     continue
-            console.print("[dim]Thinking…[/]")
+            console.print("[dim]Agentic mode — watch ⚙ lines for each file/command…[/]")
             try:
                 reply = agent.chat(line)
                 console.print(Panel(Markdown(reply), title="Assistant", border_style="blue"))

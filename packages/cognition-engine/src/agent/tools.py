@@ -26,6 +26,8 @@ ALLOWED_COMMANDS = frozenset(
         "ls",
         "make",
         "mkdir",
+        "mv",
+        "cp",
         "node",
         "npm",
         "npx",
@@ -91,6 +93,23 @@ def command_is_allowed(cmd_line: str) -> tuple[bool, str]:
 class ToolRunner:
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
+
+    def list_dir(self, rel_path: str = ".") -> str:
+        path = (self.root / rel_path).resolve()
+        if not str(path).startswith(str(self.root)):
+            return "Error: path outside project"
+        if not path.is_dir():
+            return f"Error: not a directory {rel_path}"
+        entries: list[str] = []
+        try:
+            for child in sorted(path.iterdir())[:200]:
+                kind = "/" if child.is_dir() else ""
+                entries.append(f"{child.name}{kind}")
+        except OSError as exc:
+            return f"Error: {exc}"
+        if not entries:
+            return f"(empty directory {rel_path})"
+        return "\n".join(entries)
 
     def read_file(self, rel_path: str) -> str:
         path = (self.root / rel_path).resolve()

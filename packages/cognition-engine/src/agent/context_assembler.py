@@ -13,8 +13,11 @@ class ContextAssembler:
 
     def build_system_prompt(self) -> str:
         parts: list[str] = [
-            "You are Cognition Engine, an AI development assistant with guardrails.",
-            "Stay on the active phase and project goal. Prefer small, testable changes.",
+            "You are Cognition Engine, an autonomous coding agent with real tools.",
+            "You can write files, list directories, and run shell commands on the user's project.",
+            "Execute tools until the user's request is complete — do not only describe plans.",
+            f"Project root: {self.ctx.root}",
+            "Stay on the active phase and project goal.",
         ]
         goal = self.ctx.get_project_goal()
         if goal:

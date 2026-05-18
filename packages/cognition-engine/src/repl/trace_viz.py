@@ -6,8 +6,15 @@ from src.repl.markup_safe import escape_markup
 
 _TRACE_RULES: list[tuple[str, str, str]] = [
     ("shield", "SHIELD", "#d2a8ff"),
-    ("editing file", "EDIT", "#ffa657"),
+    ("writing file", "WRITE", "#ffa657"),
+    ("write result", "WRITE", "#ffa657"),
     ("reading file", "READ", "#3fb950"),
+    ("listing directory", "LIST", "#3fb950"),
+    ("running command", "RUN", "#ffa657"),
+    ("command output", "RUN", "#ffa657"),
+    ("model step", "STEP", "#79c0ff"),
+    ("agentic mode", "AGENT", "#79c0ff"),
+    ("editing file", "EDIT", "#ffa657"),
     ("executing shell", "RUN", "#ffa657"),
     ("tool", "TOOL", "#ffa657"),
     ("tokens", "TOK", "#e3b341"),
