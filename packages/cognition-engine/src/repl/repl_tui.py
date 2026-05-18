@@ -69,7 +69,8 @@ class ModelPickerScreen(ModalScreen[str | None]):
     def __init__(self, bridge: SessionBridge) -> None:
         super().__init__()
         self.bridge = bridge
-        self._entries: list[tuple[str, str]] = []  # (id, label)
+        self._entries: list[tuple[str, str]] = []  # (model_id, label)
+        self._id_to_mid: dict[str, str] = {}
 
     def compose(self) -> ComposeResult:
         current = str(self.bridge.ctx.config.get("default_model", ""))
@@ -94,16 +95,23 @@ class ModelPickerScreen(ModalScreen[str | None]):
         lv.clear()
         current = str(self.bridge.ctx.config.get("default_model", ""))
         self._entries = []
-        idx = 0
+        self._id_to_mid = {}
+        slot = 0
+        pick_idx = 0
         for tier_name, items in models_grouped_by_tier(self.bridge.ctx.model_registry(), query=query):
-            lv.mount(ListItem(Label(f"[bold #6cb6ff]— {tier_name} —"), id=f"hdr-{tier_name}"))
+            hdr_id = f"picker-hdr-{slot}"
+            slot += 1
+            lv.mount(ListItem(Label(f"[bold #6cb6ff]— {tier_name} —"), id=hdr_id))
             for opt in items:
-                idx += 1
+                pick_idx += 1
                 mid = opt["value"]
+                item_id = f"picker-model-{slot}"
+                slot += 1
+                self._id_to_mid[item_id] = mid
                 mark = "[green]● [/green]" if mid == current else ""
-                quick = f"[dim]{min(idx, 9)}[/dim] " if idx <= 9 else "   "
+                quick = f"[dim]{min(pick_idx, 9)}[/dim] " if pick_idx <= 9 else "   "
                 label = f"{quick}{mark}{opt['select_label']}  [dim]{opt['provider']}[/dim]"
-                lv.mount(ListItem(Label(label), id=f"m-{mid}"))
+                lv.mount(ListItem(Label(label), id=item_id))
                 self._entries.append((mid, opt["select_label"]))
 
     @on(Input.Changed, "#picker-search")
@@ -112,8 +120,9 @@ class ModelPickerScreen(ModalScreen[str | None]):
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         item_id = event.item.id or ""
-        if item_id.startswith("m-"):
-            self.dismiss(item_id[2:])
+        mid = self._id_to_mid.get(item_id)
+        if mid:
+            self.dismiss(mid)
 
     def on_key(self, event) -> None:
         if event.key == "escape":
@@ -239,8 +248,11 @@ class CognitionReplApp(App):
         )
 
     def _top_bar_text(self) -> str:
+        from src.cli.model_picker import resolve_model_id
+
         reg = self.bridge.ctx.model_registry()
-        mid = str(self.bridge.ctx.config.get("default_model", "—"))
+        raw = str(self.bridge.ctx.config.get("default_model", "—"))
+        mid = resolve_model_id(raw, reg) or raw
         meta = reg.get_model(mid) or {}
         name = meta.get("display_name") or mid
         st = self.bridge.status_line()
@@ -250,11 +262,11 @@ class CognitionReplApp(App):
         )
 
     def _sync_model_select(self) -> None:
-        from src.cli.model_picker import normalize_model_id
+        from src.cli.model_picker import resolve_model_id
 
         sel = self.query_one("#model-select", Select)
         reg = self.bridge.ctx.model_registry()
-        current = normalize_model_id(self.bridge.ctx.config.get("default_model"), reg)
+        current = resolve_model_id(str(self.bridge.ctx.config.get("default_model", "")), reg)
         if not current:
             current = reg.list_models()[0] if reg.list_models() else ""
         options = select_options_for_widget(reg, current_id=current)
@@ -277,10 +289,10 @@ class CognitionReplApp(App):
             self._sync_model_select()
 
     def _apply_model_from_ui(self, model_id: str) -> None:
-        from src.cli.model_picker import apply_model_choice, normalize_model_id
+        from src.cli.model_picker import apply_model_choice, resolve_model_id
 
         reg = self.bridge.ctx.model_registry()
-        mid = normalize_model_id(model_id, reg)
+        mid = resolve_model_id(str(model_id), reg)
         if not mid or mid == self._active_model_id:
             return
         self._active_model_id = mid

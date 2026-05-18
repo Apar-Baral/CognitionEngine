@@ -108,10 +108,31 @@ def normalize_model_id(raw: object, reg: DynamicRegistry | None = None) -> str |
     text = str(raw).strip()
     if not text or text in ("Select.NULL", "Select.BLANK", "None"):
         return None
+    return resolve_model_id(text, reg)
+
+
+def resolve_model_id(text: str, reg: DynamicRegistry | None = None) -> str | None:
+    """Match registry id, display name, or partial name (e.g. 'DeepSeek R4 Pro')."""
     reg = reg or DynamicRegistry(ensure_models_yaml())
-    if text not in reg.list_models():
+    if not text.strip():
         return None
-    return text
+    raw = text.strip()
+    if raw in reg.list_models():
+        return raw
+    lower = raw.lower()
+    # exact id case-insensitive
+    for mid in reg.list_models():
+        if mid.lower() == lower:
+            return mid
+    # display name match
+    for mid in reg.list_models():
+        meta = reg.get_model(mid) or {}
+        name = str(meta.get("display_name") or "").strip()
+        if name.lower() == lower:
+            return mid
+        if lower in name.lower() or lower.replace(" ", "-") in mid.lower():
+            return mid
+    return None
 
 
 def apply_model_choice(ctx: Any, model_id: str) -> str:
@@ -122,9 +143,10 @@ def apply_model_choice(ctx: Any, model_id: str) -> str:
     from src.core.constants import GLOBAL_CONFIG_PATH
 
     reg = ctx.model_registry()
-    mid = normalize_model_id(model_id, reg)
+    mid = resolve_model_id(model_id, reg)
     if not mid:
-        return "Invalid model selection."
+        hint = ", ".join(reg.list_models()[:5])
+        return f"Unknown model '{model_id}'. Examples: {hint}…"
     model_id = mid
     ctx.config.update("default_model", model_id, persist=True)
     gpath = Path(GLOBAL_CONFIG_PATH).expanduser()
