@@ -14,7 +14,6 @@ CE_BRAND_MARKUP = """[bold #58a6ff]╔══════════════
 CE_APP_CSS = """
 Screen {
     background: #0a0e14;
-    text-selection-background: #3d5a80;
 }
 
 Header {

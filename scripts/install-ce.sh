@@ -135,6 +135,39 @@ update_source_zip_preserve_venv() {
   echo "==> Source updated via zip (venv kept)."
 }
 
+version_lt() {
+  # true if $1 < $2 (sort -V)
+  [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$1" ] && [ "$1" != "$2" ]
+}
+
+source_has_stale_tui_css() {
+  grep -q 'text-selection-background' "$PKG_DIR/src/repl/repl_theme.py" 2>/dev/null
+}
+
+verify_source_matches_remote() {
+  local local_ver remote_ver
+  local_ver="$(read_local_version)"
+  remote_ver="${REMOTE_VER:-}"
+  if [ -z "$remote_ver" ] || [ "$local_ver" = "none" ]; then
+    return 0
+  fi
+  if [ "$local_ver" = "$remote_ver" ] && ! source_has_stale_tui_css; then
+    return 0
+  fi
+  echo "==> Source mismatch (local=$local_ver, GitHub master=$remote_ver) — re-syncing from zip..."
+  update_source_zip_preserve_venv
+  local_ver="$(read_local_version)"
+  if source_has_stale_tui_css; then
+    echo "ERROR: TUI CSS still broken after sync. Try:"
+    echo "  CE_REFRESH=1 curl -fsSL https://raw.githubusercontent.com/Apar-Baral/CognitionEngine/master/scripts/install-ce.sh | bash"
+    exit 1
+  fi
+  if [ "$local_ver" != "$remote_ver" ] && version_lt "$local_ver" "$remote_ver"; then
+    echo "ERROR: Could not reach GitHub master ($remote_ver); local is $local_ver"
+    exit 1
+  fi
+}
+
 update_source() {
   local local_ver="${1:-none}"
 
@@ -144,38 +177,13 @@ update_source() {
     return
   fi
 
-  if [ -d "$INSTALL_ROOT/.git" ]; then
-    safe_cd_out_of_install_root
-    echo "==> Updating git clone..."
-    if git -C "$INSTALL_ROOT" fetch origin master 2>/dev/null \
-      && git -C "$INSTALL_ROOT" reset --hard origin/master 2>/dev/null; then
-      echo "==> Git OK."
-      return
-    fi
-    if git -C "$INSTALL_ROOT" pull --ff-only origin master 2>/dev/null; then
-      echo "==> Git OK."
-      return
-    fi
-    echo "==> git failed — zip sync..."
-    update_source_zip_preserve_venv
-    return
-  fi
-
+  # Always sync from GitHub zip (never git pull). Git clones often stay stale on Kali.
   if [ -f "$PKG_DIR/pyproject.toml" ]; then
-    echo "==> Upgrading ($local_ver) from GitHub zip..."
+    echo "==> Upgrading ($local_ver) from GitHub zip (venv preserved)..."
     update_source_zip_preserve_venv
     return
   fi
 
-  safe_cd_out_of_install_root
-  if command -v git >/dev/null 2>&1; then
-    echo "==> Cloning repository..."
-    rm -rf "$INSTALL_ROOT"
-    if git clone --depth 1 --branch master "$REPO_HTTPS" "$INSTALL_ROOT" 2>/dev/null; then
-      echo "==> Clone OK."
-      return
-    fi
-  fi
   fetch_source_zip_full
 }
 
@@ -209,6 +217,7 @@ else
 fi
 
 update_source "$LOCAL_VER"
+verify_source_matches_remote
 safe_cd_out_of_install_root
 
 if [ ! -f "$PKG_DIR/pyproject.toml" ]; then
@@ -261,6 +270,12 @@ INSTALLED_VER="$("$VENV/bin/cognition-engine" --version 2>/dev/null || echo "unk
 echo "$INSTALLED_VER"
 if ! grep -q "def run_chat" "$PKG_DIR/src/repl/repl_tui.py" 2>/dev/null; then
   echo "WARNING: source may be stale — re-run from ~ with: CE_REFRESH=1 curl -fsSL .../install-ce.sh | bash"
+fi
+if source_has_stale_tui_css; then
+  echo "WARNING: invalid TUI CSS still present — re-run installer from ~ (not git pull)"
+fi
+if [ -n "$REMOTE_VER" ] && [ "$(read_local_version)" != "$REMOTE_VER" ]; then
+  echo "WARNING: installed source $(read_local_version) != GitHub master $REMOTE_VER"
 fi
 "$VENV/bin/cognition-engine" doctor || true
 
