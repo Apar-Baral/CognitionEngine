@@ -33,14 +33,40 @@ from src.shield.truth_database import TruthDatabase
 from src.shield.validation_pipeline import ValidationPipeline
 
 
-def find_project_root(start: Path | None = None) -> Path:
+def _has_project_dna(path: Path) -> bool:
+    return (path / COGNITION_DIR / "dna.json").is_file() or (path / "cognition-dna.json").is_file()
+
+
+def resolve_project_root(start: Path | None = None) -> Path:
+    """Resolve CE project: COGNITION_PROJECT, last setup path, walk cwd; else cwd."""
+    import os
+
+    env = os.environ.get("COGNITION_PROJECT", "").strip()
+    if env:
+        candidate = Path(env).expanduser().resolve()
+        if _has_project_dna(candidate):
+            return candidate
+
+    try:
+        from src.cli.setup_summary import load_last_setup
+
+        last = load_last_setup().get("project_path")
+        if last:
+            candidate = Path(str(last)).expanduser().resolve()
+            if _has_project_dna(candidate):
+                return candidate
+    except Exception:
+        pass
+
     current = (start or Path.cwd()).resolve()
     for path in [current, *current.parents]:
-        if (path / COGNITION_DIR / "dna.json").is_file():
-            return path
-        if (path / "cognition-dna.json").is_file():
+        if _has_project_dna(path):
             return path
     return current
+
+
+def find_project_root(start: Path | None = None) -> Path:
+    return resolve_project_root(start)
 
 
 def empty_dna(project_name: str) -> dict[str, Any]:
@@ -279,6 +305,8 @@ class ProjectContext:
         return self.loader.save(dna)
 
     def get_project_goal(self) -> str:
+        if not self.is_initialized():
+            return ""
         return str(self.query.refresh().get("project", {}).get("goal", "") or "")
 
     def model_registry(self) -> Any:

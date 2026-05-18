@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from src.cli.context import ProjectContext, find_project_root
+from src.cli.context import ProjectContext, resolve_project_root
 from src.cli.git_helpers import auto_commit, auto_commit_prefix, git_init_project, should_auto_commit
 from src.core.config import Config
 
@@ -14,7 +14,13 @@ class SessionBridge:
     """Execute CE operations from the REPL without duplicating business rules."""
 
     def __init__(self, root: Path | None = None) -> None:
-        self.root = (root or find_project_root()).resolve()
+        self.root = (root or resolve_project_root()).resolve()
+        self.ctx = ProjectContext(self.root)
+        self._session_active = False
+
+    def use_project(self, root: Path | str) -> None:
+        """Rebind REPL to a project directory (after setup or /project)."""
+        self.root = Path(root).expanduser().resolve()
         self.ctx = ProjectContext(self.root)
         self._session_active = False
 
@@ -55,6 +61,7 @@ class SessionBridge:
   /budget            Token budget
   /commit MSG        Git commit now
   /setup             Run project setup wizard
+  /project PATH      Switch to project directory
   /chat TEXT         Send message to agent (requires API key)
   /exit              Quit"""
 
@@ -171,10 +178,31 @@ class SessionBridge:
         msg = auto_commit(self.root, message or "session work", prefix="ce:")
         return msg or "Nothing committed."
 
+    def cmd_project(self, path: str) -> str:
+        if not path.strip():
+            return f"Current project: {self.root} (initialized={self.ctx.is_initialized()})"
+        target = Path(path.strip()).expanduser().resolve()
+        if not target.is_dir():
+            return f"Not a directory: {target}"
+        self.use_project(target)
+        if self.ctx.is_initialized():
+            return f"Switched to project: {target}"
+        return (
+            f"Directory set to {target} but CE not initialized there.\n"
+            "Run /setup or: cognition-engine setup --project ."
+        )
+
     def cmd_setup(self) -> str:
+        from src.cli.setup_summary import load_last_setup
         from src.cli.setup_wizard import run_full_setup
 
-        run_full_setup(self.root, interactive=True)
+        target = self.root
+        if not self.ctx.is_initialized():
+            last = load_last_setup().get("project_path")
+            if last:
+                target = Path(str(last)).expanduser().resolve()
+        run_full_setup(target, interactive=True)
+        self.use_project(target)
         return "Setup complete — see sidebar for your choices."
 
     def dispatch(self, line: str) -> str:
@@ -199,6 +227,8 @@ class SessionBridge:
             "/budget": lambda: self.cmd_budget(),
             "/commit": lambda: self.cmd_commit(arg),
             "/setup": lambda: self.cmd_setup(),
+            "/project": lambda: self.cmd_project(arg),
+            "/cd": lambda: self.cmd_project(arg),
             "/chat": lambda: f"Use natural language (no /chat prefix). {arg}".strip(),
             "/bootstrap": lambda: self.get_bootstrap_text(),
             "/exit": lambda: "__EXIT__",

@@ -22,7 +22,7 @@ from textual.widgets import (
     Static,
 )
 
-from src.cli.context import find_project_root
+from src.cli.context import resolve_project_root
 from src.cli.model_picker import (
     apply_model_choice,
     format_models_table,
@@ -143,15 +143,45 @@ class CognitionReplApp(App):
 
     def __init__(self, project_root: Path | None = None) -> None:
         super().__init__()
-        root = project_root or find_project_root()
+        root = project_root or resolve_project_root()
         self.bridge = SessionBridge(root)
-        self._agent = None
+        self._agent = self._build_agent()
+
+    def _build_agent(self):
         try:
             from src.agent.orchestrator import AgentOrchestrator
 
-            self._agent = AgentOrchestrator(self.bridge.ctx)
+            return AgentOrchestrator(self.bridge.ctx)
         except Exception:
-            pass
+            return None
+
+    def _try_bind_last_project(self) -> None:
+        if self.bridge.ctx.is_initialized():
+            return
+        last = load_last_setup().get("project_path")
+        if not last:
+            return
+        target = Path(str(last)).expanduser().resolve()
+        if (target / ".cognition" / "dna.json").is_file():
+            self.bridge.use_project(target)
+            self._agent = self._build_agent()
+
+    def _require_project(self, action: str = "This action") -> bool:
+        if self.bridge.ctx.is_initialized():
+            return True
+        last = load_last_setup().get("project_path")
+        self._log(
+            f"[yellow]{action} needs a CE project.[/]\n"
+            f"[dim]You are in[/] {self.bridge.root} [dim](not initialized).[/]"
+        )
+        if last:
+            self._log(
+                f"[dim]Fix:[/] cd {last}\n"
+                f"      or type: [bold]/project {last}[/]"
+            )
+        else:
+            self._log("[dim]Fix:[/] cognition-engine setup --project ~/projects/your-app")
+        return False
 
     def _model_select_options(self) -> list[tuple[str, str]]:
         current = str(self.bridge.ctx.config.get("default_model", ""))
@@ -240,6 +270,7 @@ class CognitionReplApp(App):
         self.query_one(VerticalScroll).scroll_end(animate=False)
 
     def on_mount(self) -> None:
+        self._try_bind_last_project()
         self._sync_model_select()
         log = self.query_one(RichLog)
         log.write("[bold #6cb6ff]Cognition Engine[/] ready")
@@ -247,8 +278,17 @@ class CognitionReplApp(App):
             "[dim]Use the left panel — pick a model from the dropdown or press[/] "
             "[bold]Change model[/][dim] to search. Buttons run actions; no /help needed.[/]"
         )
-        if not self.bridge.ctx.is_initialized():
-            log.write("[yellow]Tip:[/] click [bold]Setup project[/] or run: cognition-engine setup --project .")
+        if self.bridge.ctx.is_initialized():
+            log.write(f"[dim]Project:[/] {self.bridge.root}")
+        else:
+            last = load_last_setup().get("project_path")
+            if last:
+                log.write(
+                    f"[yellow]No project here.[/] [dim]Use[/] /project {last} "
+                    f"[dim]or[/] cd {last}"
+                )
+            else:
+                log.write("[yellow]Tip:[/] click [bold]Setup project[/] or run: cognition-engine setup --project .")
         else:
             boot = self.bridge.get_bootstrap_text()
             if boot and not boot.startswith("Project not"):
@@ -270,17 +310,22 @@ class CognitionReplApp(App):
         if bid == "btn-model":
             self.action_pick_model()
         elif bid == "btn-start":
-            self.action_start()
+            if self._require_project("Start session"):
+                self.action_start()
         elif bid == "btn-status":
-            self._run_bridge(lambda: self.bridge.cmd_status())
+            if self._require_project("Status"):
+                self._run_bridge(lambda: self.bridge.cmd_status())
         elif bid == "btn-plan":
             self._prompt_plan()
         elif bid == "btn-end":
-            self.action_prompt_end()
+            if self._require_project("End session"):
+                self.action_prompt_end()
         elif bid == "btn-commit":
-            self._prompt_commit()
+            if self._require_project("Git commit"):
+                self._prompt_commit()
         elif bid == "btn-setup":
             self._run_bridge(lambda: self.bridge.cmd_setup())
+            self._agent = self._build_agent()
 
     def _run_bridge(self, fn) -> None:
         try:
@@ -289,9 +334,16 @@ class CognitionReplApp(App):
                 self._log(result)
             self._refresh_chrome()
         except Exception as exc:
-            self._log(f"[red]{exc}[/]")
+            from src.core.exceptions import DNALoadError
+
+            if isinstance(exc, DNALoadError):
+                self._require_project("This command")
+            else:
+                self._log(f"[red]{exc}[/]")
 
     def _prompt_plan(self) -> None:
+        if not self._require_project("Generate plan"):
+            return
         goal = self.bridge.ctx.get_project_goal()
         if goal:
             self._run_bridge(lambda: self.bridge.cmd_plan(""))
@@ -352,6 +404,8 @@ class CognitionReplApp(App):
             if result == "__EXIT__":
                 self.exit()
                 return
+            if line.split(maxsplit=1)[0].lower() in ("/project", "/cd", "/setup"):
+                self._agent = self._build_agent()
             if result:
                 if cmd == "/models":
                     self._log(format_models_table(self.bridge.ctx.model_registry()))

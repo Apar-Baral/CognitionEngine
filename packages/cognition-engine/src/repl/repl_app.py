@@ -9,14 +9,14 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from src.cli.context import find_project_root
+from src.cli.context import resolve_project_root
 from src.repl.repl_commands import is_chat_message, is_slash_command
 from src.repl.session_bridge import SessionBridge
 
 
 def run_repl(project_root: Path | None = None) -> None:
     """Run interactive Cognition Engine REPL."""
-    root = project_root or find_project_root()
+    root = project_root or resolve_project_root()
     bridge = SessionBridge(root)
     console = Console()
 
