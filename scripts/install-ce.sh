@@ -257,7 +257,11 @@ WRAP
 
 echo ""
 echo "=== Installed ==="
-"$VENV/bin/cognition-engine" --version 2>/dev/null || echo "unknown"
+INSTALLED_VER="$("$VENV/bin/cognition-engine" --version 2>/dev/null || echo "unknown")"
+echo "$INSTALLED_VER"
+if ! grep -q "def run_chat" "$PKG_DIR/src/repl/repl_tui.py" 2>/dev/null; then
+  echo "WARNING: source may be stale — re-run from ~ with: CE_REFRESH=1 curl -fsSL .../install-ce.sh | bash"
+fi
 "$VENV/bin/cognition-engine" doctor || true
 
 install_local_wrapper

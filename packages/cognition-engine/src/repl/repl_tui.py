@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -507,9 +506,14 @@ class CognitionReplApp(App):
     def _begin_chat(self, line: str) -> None:
         self._set_chat_busy(True)
         self._start_thinking()
-        # Textual run_worker: 2nd positional arg is worker name, not a callable arg.
+
+        def run_chat() -> ChatJobResult:
+            return self._chat_sync(line)
+
+        # run_worker only accepts a zero-arg callable; do not pass line as 2nd positional
+        # (Textual treats that as worker name — caused: missing argument 'line').
         self.run_worker(
-            partial(self._chat_sync, line),
+            run_chat,
             thread=True,
             exclusive=True,
             group="chat",
@@ -660,8 +664,11 @@ class CognitionReplApp(App):
         self._scroll_chat_end()
 
     def _run_bridge(self, fn) -> None:
+        def run_bridge() -> str:
+            return self._bridge_call(fn)
+
         self.run_worker(
-            partial(self._bridge_call, fn),
+            run_bridge,
             thread=True,
             group="bridge",
             name="bridge",
