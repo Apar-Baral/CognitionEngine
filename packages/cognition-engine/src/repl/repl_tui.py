@@ -1452,15 +1452,14 @@ class CognitionReplApp(App):
     def run_app(self) -> None:
         """Run TUI.
 
-        Default: terminal owns mouse, so normal drag-highlight + Ctrl+Shift+C works.
-        Use PgUp / PgDn to scroll inside the app.
+        Default: Textual owns mouse so buttons, dropdowns, and wheel scrolling work.
+        For terminal selection/copy, hold Shift while dragging in most terminals.
 
-        ``CE_APP_MOUSE=1`` or ``CE_NATIVE_COPY=0``: Textual owns mouse for clicks,
-        wheel scrolling, and in-app log selection.
+        ``CE_NATIVE_COPY=1``: terminal owns mouse + Ctrl+Shift+C; use PgUp/PgDn
+        to scroll because app clicks and mouse wheel are disabled in that mode.
         """
         import os
 
-        native = os.environ.get("CE_NATIVE_COPY", "1").strip().lower()
-        app_mouse = os.environ.get("CE_APP_MOUSE", "0").strip().lower()
-        use_mouse = app_mouse in ("1", "true", "yes") or native in ("0", "false", "no")
+        native = os.environ.get("CE_NATIVE_COPY", "0").strip().lower()
+        use_mouse = native not in ("1", "true", "yes")
         self.run(mouse=use_mouse)
