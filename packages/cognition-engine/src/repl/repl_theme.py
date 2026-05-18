@@ -27,9 +27,9 @@ Footer {
 }
 
 #left-rail {
-    width: 26;
-    min-width: 24;
-    max-width: 28;
+    width: 22;
+    min-width: 20;
+    max-width: 24;
     height: 1fr;
     background: #111820;
     border-right: solid #2d3a4f;
@@ -129,9 +129,9 @@ Footer {
 }
 
 #trace-rail {
-    width: 34;
-    min-width: 30;
-    max-width: 38;
+    width: 52;
+    min-width: 46;
+    max-width: 58;
     height: 1fr;
     background: #080c10;
     border-left: solid #2d3a4f;
@@ -146,14 +146,14 @@ Footer {
 }
 
 #prompt-display {
-    height: auto;
-    min-height: 2;
-    max-height: 6;
-    padding: 1 2;
-    margin-bottom: 1;
-    background: #152238;
-    border: tall #6cb6ff;
-    color: #e6edf3;
+    height: 1;
+    min-height: 1;
+    max-height: 2;
+    padding: 0 2;
+    margin-bottom: 0;
+    background: #0d1520;
+    border: solid #2d3a4f;
+    color: #8b949e;
 }
 
 #top-bar {
@@ -185,11 +185,19 @@ Footer {
     text-style: italic;
 }
 
+#task-list {
+    height: auto;
+    min-height: 1;
+    max-height: 10;
+    padding: 0 1;
+    margin: 0;
+}
+
 #thinking-box {
     display: none;
     height: auto;
     min-height: 1;
-    max-height: 12;
+    max-height: 14;
     border: solid #6cb6ff;
     background: #0d1520;
     margin: 1 0;
@@ -244,6 +252,7 @@ Footer {
 #activity-log {
     padding: 0 1;
     width: 100%;
+    min-width: 44;
 }
 
 #chat-scroll {
@@ -264,10 +273,12 @@ Footer {
 }
 
 #composer {
-    height: auto;
-    margin-top: 1;
+    height: 3;
+    min-height: 3;
+    max-height: 3;
+    margin-top: 0;
     border-top: solid #2d3a4f;
-    padding-top: 1;
+    padding-top: 0;
 }
 
 #composer.-busy #input {
@@ -282,7 +293,10 @@ Footer {
 }
 
 #input {
-    border: tall #3d5a80;
+    height: 1;
+    min-height: 1;
+    max-height: 1;
+    border: solid #3d5a80;
     background: #0d1520;
     padding: 0 1;
 }

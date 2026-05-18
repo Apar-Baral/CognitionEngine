@@ -150,7 +150,9 @@ class AgentOrchestrator:
             text = self._call_model(model, api_key, system, step=step)
             calls = extract_tool_calls(text)
             if not calls:
-                last_natural = text.strip()
+                from src.repl.response_clean import clean_assistant_text
+
+                last_natural = clean_assistant_text(text.strip())
                 if last_natural:
                     self._activity("Agent finished — final response ready")
                     self._history.append({"role": "assistant", "content": last_natural})

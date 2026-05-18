@@ -30,6 +30,8 @@ def extract_tool_calls(text: str) -> list[dict[str, Any]]:
     """Return zero or more tool call dicts from assistant text."""
     if not text or not text.strip():
         return []
+    from src.agent.dsml_parser import extract_dsml_tool_calls
+
     found: list[dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -40,6 +42,11 @@ def extract_tool_calls(text: str) -> list[dict[str, Any]]:
         if key not in seen:
             seen.add(key)
             found.append(obj)
+
+    for dsml_call in extract_dsml_tool_calls(text):
+        add(dsml_call)
+    if found:
+        return found
 
     whole = text.strip()
     if whole.startswith("["):

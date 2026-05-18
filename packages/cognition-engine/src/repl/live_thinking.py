@@ -36,17 +36,5 @@ def live_thinking_markup(tick: int, view: LiveAgentView) -> tuple[str, str]:
         for item in view.planned[-6:]:
             lines.append(f"\n[bold #58a6ff]│[/]   [yellow]▸[/] [white]{escape_markup(item)}[/]")
 
-    if view.stream.strip():
-        preview = view.stream.strip()
-        if len(preview) > 1200:
-            preview = "…" + preview[-1197:]
-        for line in preview.split("\n")[-14:]:
-            lines.append(f"\n[bold #58a6ff]│[/] [dim cyan]{escape_markup(line)}[/]")
-
-    if view.trace:
-        lines.append("\n[bold #58a6ff]│[/] [bold #3fb950]Trace[/]")
-        for item in view.trace[-10:]:
-            lines.append(f"\n[bold #58a6ff]│[/] [dim]·[/] [white]{escape_markup(item)}[/]")
-
     lines.append("\n[bold #58a6ff]╰──────────────────────────────╯[/]")
     return header, "".join(lines)

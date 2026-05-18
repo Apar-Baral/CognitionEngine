@@ -43,7 +43,9 @@ from src.cli.setup_summary import (
     load_project_setup_summary,
 )
 from src.repl.chat_log import ChatRichLog
-from src.repl.clipboard_util import copy_to_clipboard, save_copy_fallback
+from src.repl.agent_tasks import TaskBoard, ingest_activity, task_board_markup
+from src.repl.clipboard_util import copy_notify_message, copy_to_clipboard, save_copy_fallback
+from src.repl.response_clean import clean_assistant_text
 from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP
 from src.repl.session_bridge import SessionBridge
 from src.repl.markup_safe import escape_markup
@@ -376,6 +378,7 @@ class CognitionReplApp(App):
         self._last_activity = "Ready"
         self._activity_recent: list[str] = []
         self._live_view = LiveAgentView(max_steps=40)
+        self._task_board = TaskBoard()
         self._stream_flush_at = 0.0
         self._token_refresh_timer: Timer | None = None
 
@@ -430,6 +433,7 @@ class CognitionReplApp(App):
             self._activity_recent = self._activity_recent[-80:]
         self._live_view.status = msg
         self._live_view.trace = list(self._activity_recent)
+        ingest_activity(self._task_board, msg)
         lower = msg.lower()
         if "model step" in lower:
             self._live_view.stream = ""
@@ -458,9 +462,11 @@ class CognitionReplApp(App):
             self._apply_stream(chunk)
 
     def _apply_stream(self, chunk: str) -> None:
+        if "dsml" in chunk.lower() or "<|" in chunk:
+            return
         self._live_view.stream += chunk
-        if len(self._live_view.stream) > 8000:
-            self._live_view.stream = self._live_view.stream[-8000:]
+        if len(self._live_view.stream) > 4000:
+            self._live_view.stream = self._live_view.stream[-4000:]
         now = time.monotonic()
         if now - self._stream_flush_at < 0.06:
             return
@@ -562,6 +568,7 @@ class CognitionReplApp(App):
                     with Horizontal(id="thinking-head"):
                         yield LoadingIndicator(id="think-spinner")
                         yield Static("", id="chat-thinking", markup=True)
+                    yield Static("", id="task-list", markup=True)
                     yield Static("", id="thinking-detail", markup=True)
                 yield Static(
                     "[dim]Your message[/]",
@@ -660,6 +667,9 @@ class CognitionReplApp(App):
 
     def _update_thinking_box(self) -> None:
         try:
+            self.query_one("#task-list", Static).update(
+                task_board_markup(self._task_board, title="Agent")
+            )
             _, detail = live_thinking_markup(self._thinking_tick, self._live_view)
             self.query_one("#thinking-detail", Static).update(detail)
         except Exception:
@@ -730,10 +740,10 @@ class CognitionReplApp(App):
 
     def _log_user(self, text: str) -> None:
         self._last_user_prompt = text
-        preview = text if len(text) <= 500 else text[:497] + "…"
-        body = escape_markup(preview).replace("\n", "\n[bold white]  [/bold white]")
+        preview = text if len(text) <= 120 else text[:117] + "…"
+        body = escape_markup(preview)
         self.query_one("#prompt-display", Static).update(
-            f"[bold #6cb6ff]You[/]  {body}"
+            f"[dim]You:[/] [white]{body}[/]"
         )
         self._log(
             "\n[bold #6cb6ff]┏━ You ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
@@ -742,8 +752,11 @@ class CognitionReplApp(App):
         )
 
     def _log_assistant(self, text: str) -> None:
-        self._last_assistant_plain = text
-        body = escape_markup(text).replace("\n", "\n[#79c0ff]│ [/#79c0ff]")
+        clean = clean_assistant_text(text)
+        self._last_assistant_plain = clean or text
+        body = escape_markup(self._last_assistant_plain).replace(
+            "\n", "\n[#79c0ff]│ [/#79c0ff]"
+        )
         self._log(
             "\n[bold #79c0ff]┏━ Assistant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
             f"[#79c0ff]│ [/#79c0ff]{body}\n"
@@ -758,8 +771,9 @@ class CognitionReplApp(App):
 
     def _log_assistant_typing(self, text: str) -> None:
         """Reveal assistant reply character-by-character (Claude Code–style)."""
-        self._last_assistant_plain = text
-        self._typing_full = text
+        clean = clean_assistant_text(text)
+        self._last_assistant_plain = clean or text
+        self._typing_full = self._last_assistant_plain
         self._typing_pos = 0
         try:
             self.query_one("#thinking-box", Vertical).add_class("visible")
@@ -838,6 +852,7 @@ class CognitionReplApp(App):
         self._thinking_tick = 0
         self._activity_recent = []
         self._live_view = LiveAgentView(max_steps=40)
+        self._task_board = TaskBoard()
         self._stream_flush_at = 0.0
         self._thinking_min_until = time.monotonic() + 1.2
         self.query_one("#thinking-box", Vertical).add_class("visible")
@@ -1145,25 +1160,15 @@ class CognitionReplApp(App):
             self.notify(f"No {label} to copy", severity="warning", timeout=3)
             return
         path = save_copy_fallback(text)
-        ok, _msg = copy_to_clipboard(text)
-        if ok:
-            self.notify(
-                f"Copied {label} to clipboard",
-                title="Copy",
-                severity="information",
-                timeout=3,
-            )
-        else:
-            self.notify(
-                f"Saved to {path} — open that file to copy",
-                title="Copy fallback",
-                severity="warning",
-                timeout=6,
-            )
-        self._log_system(
-            f"[green]✓[/] {label} → "
-            f"{'clipboard' if ok else str(path)}"
+        ok, msg = copy_to_clipboard(text)
+        note = copy_notify_message(ok, msg, path)
+        self.notify(
+            note.split("\n")[0][:120],
+            title="Copy" if ok else "Copy — use file",
+            severity="information" if ok else "warning",
+            timeout=8,
         )
+        self._log_system(f"[green]✓[/] {label} → {note}")
 
     def _trace_plain_text(self) -> str:
         trace = self.query_one("#activity-log", ChatRichLog).plain_text()
