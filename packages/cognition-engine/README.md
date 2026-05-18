@@ -62,11 +62,21 @@ cognition-engine setup --project .
 
 REPL slash commands: `/help`, `/model ID`, `/plan`, `/start`, `/end summary`, `/status`, `/commit msg`.
 
-Optional slim install (no PyTorch):
+**Kali/Linux — use a venv (never system pip):**
 
 ```bash
-pip install -e .
-pip install -e ".[semantic]"   # Chroma + embeddings
+curl -fsSL https://raw.githubusercontent.com/Apar-Baral/CognitionEngine/master/scripts/install-ce.sh | bash
+source ~/CognitionEngine/packages/cognition-engine/.venv/bin/activate
+cognition-engine setup --project ~/projects/your-app
+```
+
+Default install is **slim (~200MB)**. Do **not** run `pip install -e ".[semantic]"` unless you need vector memory (~4GB PyTorch download).
+
+```bash
+# Only if you need Chroma embeddings:
+cd ~/CognitionEngine/packages/cognition-engine
+source .venv/bin/activate
+pip install -e ".[semantic]"
 ```
 
 Copy `config/profile.example.yaml` to `~/.cognition/profile.yaml` for defaults (model, auto_commit).

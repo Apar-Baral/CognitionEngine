@@ -176,9 +176,9 @@ class ProjectContext:
             project_root=self.root,
         )
 
-    def validation_pipeline(self) -> ValidationPipeline:
+    def validation_pipeline(self, *, index_codebase: bool = False) -> ValidationPipeline:
         db = TruthDatabase(self.root)
-        if self.is_initialized():
+        if index_codebase and self.is_initialized():
             try:
                 db.index_codebase()
             except Exception:

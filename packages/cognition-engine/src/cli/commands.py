@@ -93,14 +93,27 @@ def cmd_setup(
         None, "--project", "-p", help="Also initialize this project directory"
     ),
     non_interactive: bool = typer.Option(
-        False, "--yes", "-y", help="Skip API key prompts"
+        False, "--yes", "-y", help="Skip interactive prompts"
+    ),
+    git: Optional[bool] = typer.Option(
+        None, "--git/--no-git", help="Initialize git for project (default: ask once)"
+    ),
+    semantic: bool = typer.Option(
+        False,
+        "--semantic",
+        help="Also install Chroma/embeddings (~4GB). Default install is slim.",
     ),
 ) -> None:
     """First-time setup: global config, models registry, optional project init."""
     try:
         from src.cli.setup_wizard import run_full_setup
 
-        run_full_setup(project_path, interactive=not non_interactive)
+        run_full_setup(
+            project_path,
+            interactive=not non_interactive,
+            init_git=git,
+            install_semantic=semantic,
+        )
     except Exception as e:
         _handle_error(e)
 
@@ -389,7 +402,7 @@ def cmd_doctor() -> None:
 
     pkg_root = Path(src.__file__).resolve().parent
     checks: list[tuple[str, bool]] = [
-        ("Package version >= 0.3.0", __version__ >= "0.3.0"),
+        ("Package version >= 0.3.1", __version__ >= "0.3.1"),
         ("session_tokens.py present", (pkg_root / "memory" / "session_tokens.py").is_file()),
         (
             "Token dict normalization works",
@@ -415,6 +428,12 @@ def cmd_doctor() -> None:
     formatters.print_rule("Install diagnostics")
     formatters.print_info(f"Version: {__version__}")
     formatters.print_info(f"Package path: {pkg_root}")
+    try:
+        import chromadb  # noqa: F401
+
+        formatters.print_info("Install type: full/semantic (chromadb present)")
+    except ImportError:
+        formatters.print_info("Install type: slim (no chromadb — good for bandwidth)")
     failed = 0
     for label, ok in checks:
         if ok:
@@ -425,9 +444,8 @@ def cmd_doctor() -> None:
 
     if failed:
         formatters.print_warning(
-            "Reinstall from a fresh clone:\n"
-            "  git clone https://github.com/Apar-Baral/CognitionEngine.git ~/CognitionEngine\n"
-            "  cd ~/CognitionEngine/packages/cognition-engine && pip install -e ."
+            "Reinstall (slim, uses venv — not system pip):\n"
+            "  curl -fsSL https://raw.githubusercontent.com/Apar-Baral/CognitionEngine/master/scripts/install-ce.sh | bash"
         )
         raise typer.Exit(1)
     formatters.print_success("All checks passed.")
@@ -671,7 +689,7 @@ def cmd_validate(
         path = file
         original = path.read_text(encoding="utf-8") if path.is_file() and not code else ""
         proposed = code or path.read_text(encoding="utf-8")
-        pipeline = ctx.validation_pipeline()
+        pipeline = ctx.validation_pipeline(index_codebase=True)
         result = pipeline.validate_code_change(str(path), original, proposed)
         verdict = result.get("final_verdict", "PASS")
         style = {"PASS": "green", "WARN": "yellow", "BLOCK": "red"}.get(verdict, "white")

@@ -9,8 +9,9 @@ import yaml
 
 from src.cli import formatters, prompts
 from src.cli.context import ProjectContext
-from src.cli.git_helpers import git_init_project, write_project_gitignore
+from src.cli.git_helpers import git_init_project, is_git_repo, write_project_gitignore
 from src.core.constants import COGNITION_DIR, GLOBAL_CONFIG_PATH, MODELS_REGISTRY_PATH
+from src.core.user_state import set_flag
 from src.models.dynamic_registry import bundled_models_path, ensure_models_yaml
 
 
@@ -60,6 +61,24 @@ def setup_global(*, interactive: bool = True) -> Path:
     return cfg_path
 
 
+def prompt_git_setup(project_root: Path, *, interactive: bool = True) -> bool:
+    """One-time-per-project git offer; respects global 'git prompts enabled' preference."""
+    if not interactive:
+        return False
+    if is_git_repo(project_root):
+        return False
+    marker = project_root / COGNITION_DIR / ".git_setup_done"
+    if marker.is_file():
+        return False
+    if not prompts.confirm(
+        "Initialize git for this project with a CE-friendly .gitignore? (recommended, one-time)",
+        default=True,
+    ):
+        set_flag("git_setup_declined_once", True)
+        return False
+    return True
+
+
 def setup_project(
     project_path: Path,
     *,
@@ -67,8 +86,9 @@ def setup_project(
     run_plan: bool = True,
     phases: int = 24,
     install_cursor: bool = True,
-    init_git: bool = True,
+    init_git: bool | None = None,
     reinit: bool = False,
+    interactive: bool = True,
 ) -> ProjectContext:
     """Initialize CE for a project directory."""
     root = project_path.resolve()
@@ -125,9 +145,15 @@ def setup_project(
         except Exception as exc:
             formatters.print_warning(f"Cursor adapter skipped: {exc}")
 
-    if init_git:
+    do_git = init_git
+    if do_git is None:
+        do_git = prompt_git_setup(root, interactive=interactive)
+    if do_git:
+        write_project_gitignore(root)
         for msg in git_init_project(root, initial_commit=bool(goal_text or goal_file.is_file())):
             formatters.print_info(msg)
+        (root / COGNITION_DIR / ".git_setup_done").write_text("1\n", encoding="utf-8")
+        formatters.print_success("Git initialized for this project.")
 
     return ctx
 
@@ -150,10 +176,40 @@ def run_full_setup(
     project_path: Path | None = None,
     *,
     interactive: bool = True,
+    init_git: bool | None = None,
+    install_semantic: bool = False,
 ) -> None:
     setup_global(interactive=interactive)
+    if install_semantic:
+        _install_semantic_extra()
     if project_path:
-        setup_project(project_path, reinit=False)
+        setup_project(
+            project_path,
+            reinit=False,
+            init_git=init_git,
+            interactive=interactive,
+        )
     formatters.print_rule("Setup complete")
-    formatters.print_info("Run: cognition-engine chat   (interactive session)")
-    formatters.print_info("Or:  cognition-engine start  (bootstrap only)")
+    formatters.print_info("Run: cognition-engine          (interactive REPL)")
+    formatters.print_info("Or:  cognition-engine chat")
+    if not install_semantic:
+        formatters.print_info(
+            "Slim install (no PyTorch). For Chroma embeddings later: "
+            "pip install -e \".[semantic]\" inside packages/cognition-engine venv"
+        )
+
+
+def _install_semantic_extra() -> None:
+    import subprocess
+    import sys
+
+    pkg = Path(__file__).resolve().parents[2]
+    formatters.print_warning(
+        "Installing [semantic] extras (~4GB download: PyTorch + Chroma). This may take several minutes."
+    )
+    if not prompts.confirm("Continue with semantic install?", default=False):
+        return
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "-e", f"{pkg}[semantic]"],
+    )
+    formatters.print_success("Semantic extras installed.")
