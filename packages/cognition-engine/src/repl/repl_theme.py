@@ -63,17 +63,6 @@ Footer {
     padding: 0 0;
 }
 
-#model-select {
-    margin: 0 0 1 0;
-    width: 100%;
-    border: solid #3d5a80;
-    background: #0d1520;
-}
-
-#model-select:focus {
-    border: solid #6cb6ff;
-}
-
 #setup-panel {
     color: #adbac7;
     padding: 0 0 1 0;
@@ -157,11 +146,27 @@ Footer {
 }
 
 #top-bar {
-    height: 2;
+    height: 3;
+    min-height: 3;
     background: #131a24;
     border: solid #2d3a4f;
-    padding: 0 2;
+    padding: 0 1;
+}
+
+#top-bar-info {
+    width: 1fr;
+    height: 100%;
     content-align: left middle;
+    padding: 0 1;
+}
+
+#top-bar #model-select {
+    width: 32;
+    min-width: 24;
+    max-width: 40;
+    margin: 0 1 0 0;
+    border: solid #6cb6ff;
+    background: #0d1520;
 }
 
 #token-bar {
@@ -273,12 +278,11 @@ Footer {
 }
 
 #composer {
-    height: 3;
+    height: auto;
     min-height: 3;
-    max-height: 3;
     margin-top: 0;
     border-top: solid #2d3a4f;
-    padding-top: 0;
+    padding: 1 0 0 0;
 }
 
 #composer.-busy #input {
@@ -293,16 +297,20 @@ Footer {
 }
 
 #input {
-    height: 1;
+    width: 1fr;
+    height: auto;
     min-height: 1;
-    max-height: 1;
     border: solid #3d5a80;
     background: #0d1520;
     padding: 0 1;
 }
 
 #input:focus {
-    border: tall #6cb6ff;
+    border: solid #6cb6ff;
+}
+
+#input:disabled {
+    opacity: 0.5;
 }
 
 ModelPickerScreen {

@@ -57,23 +57,19 @@ from src.agent.permissions import PermissionDecision
 
 
 COMMAND_BUTTONS: list[tuple[str, str, str]] = [
-    ("btn-model", "Change model", "primary"),
     ("btn-start", "Start session", "primary"),
     ("btn-plan", "Generate plan", "primary"),
     ("btn-show-plan", "Show plan", "primary"),
     ("btn-shield", "Shield info", ""),
     ("btn-status", "Track progress", ""),
     ("btn-end", "End session", ""),
-    ("btn-copy", "Copy reply", "primary"),
-    ("btn-copy-trace", "Copy trace", ""),
-    ("btn-copy-all", "Copy all", ""),
     ("btn-setup", "Setup keys", "primary"),
     ("btn-quit", "Exit CE", "danger"),
 ]
 
 COMMAND_HINTS = (
-    "[dim]Copy: buttons · Ctrl+Shift+C reply · Ctrl+Shift+T trace · "
-    "Ctrl+Shift+A all · also ~/.cognition/last_reply.txt[/]"
+    "[dim]Model: top bar dropdown · Ctrl+M search · "
+    "Copy: drag in terminal (like Kali) · Ctrl+Shift+C[/]"
 )
 
 
@@ -534,13 +530,6 @@ class CognitionReplApp(App):
             with VerticalScroll(id="left-rail", can_focus=True):
                 with Vertical(id="left-rail-inner"):
                     yield Static(CE_BRAND_MARKUP, id="ce-brand", markup=True)
-                    yield Static("MODEL", classes="rail-section-title")
-                    yield Select(
-                        model_options,
-                        id="model-select",
-                        prompt="Select model…",
-                        value=model_value,
-                    )
                     yield Static(self._setup_panel_text(), id="setup-panel", markup=True)
                     yield Static("ACTIONS", classes="rail-section-title")
                     with Vertical(id="command-buttons"):
@@ -553,7 +542,14 @@ class CognitionReplApp(App):
                             yield Button(label, id=bid, classes=classes)
                     yield Static(COMMAND_HINTS, id="command-hints", markup=True)
             with Vertical(id="chat-column"):
-                yield Static(self._top_bar_text(), id="top-bar", markup=True)
+                with Horizontal(id="top-bar"):
+                    yield Static(self._top_bar_info_text(), id="top-bar-info", markup=True)
+                    yield Select(
+                        model_options,
+                        id="model-select",
+                        prompt="Model…",
+                        value=model_value,
+                    )
                 with VerticalScroll(id="chat-scroll", can_focus=True):
                     yield ChatRichLog(
                         id="log",
@@ -593,8 +589,8 @@ class CognitionReplApp(App):
                         min_width=1,
                     )
                 yield Static(
-                    "[dim]Copy trace/all buttons · Ctrl+Shift+T/A/C · "
-                    "fallback ~/.cognition/last_reply.txt[/]",
+                    "[dim]Copy: select text with mouse (terminal) · "
+                    "Ctrl+Shift+C · ~/.cognition/last_reply.txt[/]",
                     id="trace-hint",
                     markup=True,
                 )
@@ -639,15 +635,11 @@ class CognitionReplApp(App):
                 pass
         return t
 
-    def _top_bar_text(self) -> str:
-        from src.cli.model_picker import resolve_model_id
-
-        reg = self.bridge.ctx.model_registry()
-        raw = str(self.bridge.ctx.config.get("default_model", "—"))
-        mid = resolve_model_id(raw, reg) or raw
-        meta = reg.get_model(mid) or {}
-        name = meta.get("display_name") or mid
-        return f"[bold #6cb6ff]{name}[/] [dim]({mid})[/]"
+    def _top_bar_info_text(self) -> str:
+        proj = self.bridge.root.name or str(self.bridge.root)
+        init = "[#3fb950]●[/]" if self.bridge.ctx.is_initialized() else "[#768390]○[/]"
+        key = "key ✓" if self.bridge.ctx.config.get_api_key("deepseek") or self.bridge.ctx.config.get_api_key("openai") else "[dim]no key[/]"
+        return f"{init} [bold white]{proj}[/]  [dim]{key}[/]  [dim]Tab→input · drag to copy[/]"
 
     def _token_bar_text(self) -> str:
         t = self._session_token_totals()
@@ -708,7 +700,7 @@ class CognitionReplApp(App):
             self._select_syncing = False
 
     def _refresh_chrome(self, *, sync_select: bool = False) -> None:
-        self.query_one("#top-bar", Static).update(self._top_bar_text())
+        self.query_one("#top-bar-info", Static).update(self._top_bar_info_text())
         self._refresh_token_bar()
         self.query_one("#setup-panel", Static).update(self._setup_panel_text())
         if sync_select:
@@ -754,6 +746,8 @@ class CognitionReplApp(App):
     def _log_assistant(self, text: str) -> None:
         clean = clean_assistant_text(text)
         self._last_assistant_plain = clean or text
+        if self._last_assistant_plain.strip():
+            save_copy_fallback(self._last_assistant_plain)
         body = escape_markup(self._last_assistant_plain).replace(
             "\n", "\n[#79c0ff]│ [/#79c0ff]"
         )
@@ -935,11 +929,13 @@ class CognitionReplApp(App):
             self.query_one("#token-bar", Static).update(self._token_bar_text())
         except Exception:
             pass
-        log = self.query_one("#log", RichLog)
+        log = self.query_one("#log", ChatRichLog)
         log.write("[bold #6cb6ff]Cognition Engine[/] ready")
         log.write(
-            "[dim]Left panel:[/] [bold]Setup keys[/] · model dropdown · [bold]Change model[/] to search"
+            "[dim]Model:[/] top bar dropdown · [bold]Ctrl+M[/] search · "
+            "[dim]Copy:[/] drag with mouse in terminal (same as Kali)"
         )
+        self.query_one("#input", Input).focus()
         if self.bridge.ctx.is_initialized():
             log.write(f"[dim]Project:[/] {self.bridge.root}")
             goal = (self.bridge.ctx.get_project_goal() or "").strip()
@@ -1018,12 +1014,6 @@ class CognitionReplApp(App):
         elif bid == "btn-end":
             if self._require_project("End session"):
                 self.action_prompt_end()
-        elif bid == "btn-copy":
-            self.action_copy_last_reply()
-        elif bid == "btn-copy-trace":
-            self.action_copy_trace()
-        elif bid == "btn-copy-all":
-            self.action_copy_chat_log()
         elif bid == "btn-setup":
             self.action_open_setup()
         elif bid == "btn-quit":
@@ -1224,9 +1214,10 @@ class CognitionReplApp(App):
         self.action_confirm_quit()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        if self._chat_busy:
-            return
         line = event.value.strip()
+        if self._chat_busy:
+            self._log_system("[yellow]Still working — Esc to cancel, then type again.[/]")
+            return
         event.input.value = ""
         if not line:
             return
@@ -1300,3 +1291,14 @@ class CognitionReplApp(App):
             self._log_system(
                 "Chat needs an API key. Click [bold]Setup keys[/] or type /keys"
             )
+
+    def run_app(self) -> None:
+        """Run TUI. On Linux, mouse is off by default so the terminal can select/copy text."""
+        import os
+        import sys
+
+        native = os.environ.get("CE_NATIVE_COPY")
+        if native is None:
+            native = "1" if sys.platform.startswith("linux") else "0"
+        use_mouse = native.strip().lower() not in ("1", "true", "yes")
+        self.run(mouse=use_mouse)

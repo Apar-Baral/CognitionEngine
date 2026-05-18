@@ -120,7 +120,7 @@ def run_repl_textual(project_root: Path | None = None) -> None:
         from src.repl.repl_tui import CognitionReplApp
 
         app = CognitionReplApp(project_root)
-        app.run()
+        app.run_app()
     except Exception as exc:
         console = Console(stderr=True)
         console.print(f"[yellow]Agent console UI unavailable ({exc}).[/]")
