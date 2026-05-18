@@ -13,6 +13,7 @@ from src.dna.mutator import DNAMutator
 from src.dna.query import DNAQuery
 from src.memory.metrics_store import MetricsStore
 from src.memory.session_store import SessionStore
+from src.memory.session_tokens import session_tokens_consumed
 from src.synthesizer.trend_analyzer import TrendAnalyzer
 
 
@@ -155,7 +156,7 @@ class KnowledgeSynthesizer:
         categories: Counter[str] = Counter()
         for s in sessions[-10:]:
             caught = int(s.get("hallucinations_caught", 0))
-            tokens = int(s.get("tokens_consumed", s.get("tokens", 1000)) or 1000)
+            tokens = session_tokens_consumed(s) or 1000
             rates.append(caught / max(tokens, 1) * 1000)
             for h in s.get("hallucinations", []):
                 if isinstance(h, dict):
@@ -185,7 +186,7 @@ class KnowledgeSynthesizer:
         deltas = []
         for s in sessions[-10:]:
             pred = float(s.get("predicted_tokens", 0))
-            actual = float(s.get("tokens_consumed", s.get("tokens", 0)))
+            actual = float(session_tokens_consumed(s))
             if pred > 0 and actual > 0:
                 deltas.append((actual - pred) / pred)
         if len(deltas) < 5:
@@ -233,8 +234,8 @@ class KnowledgeSynthesizer:
         clean = [s for s in sessions if int(s.get("debt_items_touched", 0)) < 2]
         if len(high_debt) < 2 or len(clean) < 2:
             return []
-        t_high = sum(int(s.get("tokens_consumed", 0)) for s in high_debt) / len(high_debt)
-        t_clean = sum(int(s.get("tokens_consumed", 0)) for s in clean) / len(clean)
+        t_high = sum(session_tokens_consumed(s) for s in high_debt) / len(high_debt)
+        t_clean = sum(session_tokens_consumed(s) for s in clean) / len(clean)
         if t_high > t_clean * 1.2:
             return [
                 {

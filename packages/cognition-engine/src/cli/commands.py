@@ -48,7 +48,7 @@ def _handle_error(exc: Exception) -> None:
     if isinstance(exc, CognitionEngineError):
         suggestion = ""
         if isinstance(exc, DNALoadError):
-            suggestion = "Run `cc init` in your project directory."
+            suggestion = "Run `cognition-engine init` in your project directory."
         formatters.print_error(exc.message, details=str(exc.details), suggestion=suggestion)
     else:
         if _state.get("verbose"):
@@ -104,7 +104,9 @@ def cmd_init(
         formatters.print_info(f"Language: {scan['language']} | Framework: {scan.get('framework', 'n/a')}")
         formatters.print_info(f"Files scanned: {scan['file_count']}")
         formatters.print_info(f"DNA: {ctx.cognition_dir / 'dna.json'}")
-        formatters.print_info("Next: run `cc plan` to generate a plan, or `cc start` to begin.")
+        formatters.print_info(
+            "Next: run `cognition-engine plan` to generate a plan, or `cognition-engine start` to begin."
+        )
     except Exception as e:
         _handle_error(e)
 
@@ -151,7 +153,7 @@ def cmd_plan(
             est_sessions = max(len(phase_list) * 2, len(phase_list))
             formatters.print_success(
                 f"Plan saved. {len(phase_list)} phases defined. "
-                f"Estimated ~{est_sessions} sessions. Run `cc start` to begin Phase 1."
+                f"Estimated ~{est_sessions} sessions. Run `cognition-engine start` to begin Phase 1."
             )
     except Exception as e:
         _handle_error(e)
@@ -172,7 +174,7 @@ def cmd_start(
         dna = ctx.query.refresh()
         phases = dna.get("master_plan", {}).get("phase_sequence", [])
         if not phases:
-            formatters.print_warning("No plan found. Run `cc plan` first.")
+            formatters.print_warning("No plan found. Run `cognition-engine plan` first.")
             raise typer.Exit(1)
 
         if model:
@@ -274,7 +276,9 @@ def cmd_end(
         formatters.print_info(f"Next: {rec_engine.get_next_session_prompt()}")
 
         ctx.clear_session_state()
-        formatters.print_success("Session ended. Run `cc start` for your next session.")
+        formatters.print_success(
+            "Session ended. Run `cognition-engine start` for your next session."
+        )
     except Exception as e:
         _handle_error(e)
 

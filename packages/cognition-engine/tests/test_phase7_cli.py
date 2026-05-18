@@ -64,6 +64,36 @@ def test_config_list(tmp_path: Path):
         assert "shield_sensitivity" in r.stdout or "default_model" in r.stdout
 
 
+def test_end_session_after_start(tmp_path: Path):
+    """Regression: end must not crash when session summary uses tokens dict."""
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _invoke(["init", str(tmp_path)])
+        _invoke(
+            [
+                "--project",
+                str(tmp_path),
+                "plan",
+                "--goal",
+                "Build an XSS scanner web app",
+                "--phases",
+                "12",
+            ],
+        )
+        _invoke(["--project", str(tmp_path), "start"])
+        r = _invoke(
+            [
+                "--project",
+                str(tmp_path),
+                "end",
+                "--summary",
+                "Discovery notes",
+            ],
+        )
+        assert r.exit_code == 0, r.stdout + r.stderr
+        assert "int() argument" not in (r.stdout + r.stderr)
+        assert "Session ended" in r.stdout or "Session Summary" in r.stdout
+
+
 def test_start_without_init_fails(tmp_path: Path):
     empty = tmp_path / "empty"
     empty.mkdir()

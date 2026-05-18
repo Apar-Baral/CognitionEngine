@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.memory.session_tokens import session_tokens_consumed
+
 
 class RewardCalculator:
     """Compute session reward from outcome metrics."""
@@ -24,13 +26,13 @@ class RewardCalculator:
 
     def _efficiency_score(self, outcome: dict[str, Any]) -> float:
         lines = float(outcome.get("lines_accepted", outcome.get("files_modified_count", 0) * 20))
-        tokens = float(outcome.get("tokens_consumed", outcome.get("total_tokens", 1)) or 1)
+        tokens = float(session_tokens_consumed(outcome) or outcome.get("total_tokens", 1) or 1)
         baseline = 0.05
         ratio = lines / tokens
         return min(100.0, (ratio / baseline) * 50)
 
     def _budget_adherence_score(self, outcome: dict[str, Any]) -> float:
-        used = float(outcome.get("tokens_consumed", 0))
+        used = float(session_tokens_consumed(outcome))
         budget = float(outcome.get("token_budget", used) or used)
         if budget <= 0:
             return 80.0

@@ -203,6 +203,7 @@ class OperationalMemory:
             "session_type": self.session_type,
             "duration_seconds": duration,
             "tokens": tokens,
+            "tokens_consumed": tokens["total"],
             "cost_incurred": round(tokens["total"] * 0.000003, 4),
             "files_modified": list(files_modified),
             "files_modified_count": len(files_modified),

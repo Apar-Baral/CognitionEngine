@@ -11,6 +11,7 @@ from src.core.constants import PhaseStatus, TaskStatus, VALID_PHASE_TRANSITIONS
 from src.core.exceptions import InvalidTransitionError, TransitionBlockedError
 from src.dna.mutator import DNAMutator
 from src.dna.query import DNAQuery
+from src.memory.session_tokens import session_tokens_consumed
 
 VelocityTrend = Literal["accelerating", "stable", "decelerating"]
 
@@ -172,7 +173,7 @@ class PhaseTracker:
             if not isinstance(p, dict):
                 continue
             est = int(p.get("estimated_tokens") or 1)
-            actual = int(p.get("tokens_consumed") or 0)
+            actual = session_tokens_consumed(p)
             est_sessions = max(1, est // 10000)
             actual_sessions = int(p.get("sessions_used") or 0)
             ratio = max(actual / est, actual_sessions / est_sessions)
@@ -216,7 +217,7 @@ class PhaseTracker:
             if phase:
                 phase["completion_score"] = progress
                 phase["sessions_used"] = int(phase.get("sessions_used", 0)) + 1
-                phase["tokens_consumed"] = int(phase.get("tokens_consumed", 0)) + tokens
+                phase["tokens_consumed"] = session_tokens_consumed(phase) + tokens
             proj = d.get("project", {})
             proj["total_sessions"] = int(proj.get("total_sessions", 0)) + 1
             proj["total_tokens_consumed"] = int(proj.get("total_tokens_consumed", 0)) + tokens

@@ -50,7 +50,7 @@ class RecommendationEngine:
             return recs[0].get("description", "Continue current work.")
         phase = self.query.get_current_phase()
         if not phase:
-            return "Run `cc plan` to define phases, then `cc start`."
+            return "Run `cognition-engine plan` to define phases, then `cognition-engine start`."
         st = next(
             (
                 s
@@ -60,7 +60,8 @@ class RecommendationEngine:
             None,
         )
         if st:
-            remaining = int((100 - st.get("progress", 0)) / 100 * st.get("estimated_tokens", 12000))
+            est = int(st.get("estimated_tokens", 12000) or 12000)
+            remaining = int((100 - st.get("progress", 0)) / 100 * est)
             return (
                 f"Next session: Continue {phase['id']} — {st.get('name', '')} "
                 f"({st.get('progress', 0)}% done). Estimated: {remaining:,} tokens."
@@ -96,7 +97,7 @@ class RecommendationEngine:
         for st in phase.get("sub_tasks", []):
             if st.get("status") == TaskStatus.IN_PROGRESS.value:
                 prog = st.get("progress", 0)
-                est = st.get("estimated_tokens", 12000)
+                est = int(st.get("estimated_tokens", 12000) or 12000)
                 remaining = int(est * (100 - prog) / 100)
                 return [
                     {

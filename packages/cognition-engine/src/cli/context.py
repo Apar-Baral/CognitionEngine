@@ -108,7 +108,7 @@ class ProjectContext:
     def require_initialized(self) -> None:
         if not self.is_initialized():
             raise DNALoadError(
-                "Cognition Engine is not initialized in this directory. Run `cc init` first.",
+                "Cognition Engine is not initialized in this directory. Run `cognition-engine init` first.",
                 details={"path": str(self.root)},
             )
 

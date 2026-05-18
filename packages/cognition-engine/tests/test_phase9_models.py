@@ -244,6 +244,41 @@ def test_knowledge_synthesizer(tmp_path: Path):
     assert isinstance(insights, list)
 
 
+def test_knowledge_synthesizer_operational_summary_shape(tmp_path: Path):
+    """Regression: end-session summary uses tokens dict, not tokens_consumed."""
+    cog = tmp_path / ".cognition"
+    cog.mkdir()
+    (cog / "dna.json").write_text(json.dumps(minimal_valid_dna()), encoding="utf-8")
+    loader = DNALoader(tmp_path)
+    query = DNAQuery(loader)
+    mutator = DNAMutator(loader)
+    from src.memory.session_store import SessionStore
+
+    store = SessionStore(tmp_path, "test")
+    metrics = MetricsStore(tmp_path, "test")
+    synth = KnowledgeSynthesizer(query, mutator, store, metrics)
+    summary = {
+        "session_id": 1,
+        "efficiency_score": 100.0,
+        "hallucinations_caught": 0,
+        "tokens": {"input": 0, "output": 0, "reasoning": 0, "total": 0},
+    }
+    insights = synth.synthesize(summary)
+    assert isinstance(insights, list)
+
+
+def test_reward_calculator_tokens_dict():
+    rc = RewardCalculator()
+    r = rc.calculate_reward(
+        {
+            "efficiency_score": 90,
+            "tokens": {"total": 500},
+            "budget_adherence_percentage": 100,
+        }
+    )
+    assert 0 <= r <= 100
+
+
 def test_trend_analyzer_increasing():
     ta = TrendAnalyzer()
     trend = ta.calculate_trend([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
