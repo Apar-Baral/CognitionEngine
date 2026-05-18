@@ -33,12 +33,12 @@ def main() -> None:
         import os
 
         from src.cli.context import resolve_project_root
-        from src.cli.hermes_setup import hermes_quick_setup, needs_api_keys
+        from src.cli.hermes_setup import hermes_quick_setup, needs_quick_setup
         from src.repl.repl_app import run_repl_textual
 
         root = resolve_project_root()
-        if needs_api_keys() and os.environ.get("CE_SKIP_SETUP") != "1":
-            hermes_quick_setup(root, ask_keys=True, init_project=False)
+        if needs_quick_setup() and os.environ.get("CE_SKIP_SETUP") != "1":
+            hermes_quick_setup(root, ask_keys=True, ask_model=True, init_project=False)
         os.environ["CE_SETUP_DONE"] = "1"
         run_repl_textual()
         return

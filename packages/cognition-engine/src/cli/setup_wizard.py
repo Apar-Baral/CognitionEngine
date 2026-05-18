@@ -286,10 +286,15 @@ def run_full_setup(
     quick: bool = True,
 ) -> None:
     if quick and interactive:
-        from src.cli.hermes_setup import hermes_quick_setup, needs_api_keys
+        from src.cli.hermes_setup import hermes_quick_setup
 
         root = project_path or Path.cwd()
-        hermes_quick_setup(root, ask_keys=needs_api_keys(), init_project=True)
+        hermes_quick_setup(
+            root,
+            ask_keys=True,
+            ask_model=True,
+            init_project=True,
+        )
         if install_semantic:
             _install_semantic_extra()
         return

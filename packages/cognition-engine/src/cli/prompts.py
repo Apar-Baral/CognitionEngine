@@ -58,13 +58,17 @@ def ask_text(
 ) -> str:
     try:
         while True:
-            val = Prompt.ask(f"[bold cyan]{question}[/bold cyan]", default=default or None)
+            val = Prompt.ask(
+                f"[bold cyan]{question}[/bold cyan]",
+                default=default if default else "",
+            )
+            val = val if val is not None else (default or "")
             if validator is None or validator(val):
                 return val
             console.print("[red]Invalid input. Try again.[/red]")
     except (KeyboardInterrupt, EOFError):
         _handle_interrupt()
-        return default
+        return default or ""
 
 
 def ask_number(

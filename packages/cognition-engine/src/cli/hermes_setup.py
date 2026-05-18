@@ -1,4 +1,4 @@
-"""Hermes-style quick setup — minimal prompts, env keys, no venv friction."""
+"""Hermes-style quick setup — pick model, then API key for that provider."""
 
 from __future__ import annotations
 
@@ -11,9 +11,10 @@ import yaml
 from src.cli import formatters
 from src.cli.context import ProjectContext, resolve_project_root
 from src.cli.git_helpers import is_git_repo, write_project_gitignore
+from src.cli.model_picker import prompt_select_model
 from src.cli.setup_summary import save_last_setup, save_project_setup_summary
 from src.core.constants import GLOBAL_CONFIG_PATH
-from src.models.dynamic_registry import ensure_models_yaml
+from src.models.dynamic_registry import DynamicRegistry, ensure_models_yaml
 
 _ENV_KEYS = {
     "anthropic": "ANTHROPIC_API_KEY",
@@ -22,6 +23,19 @@ _ENV_KEYS = {
     "deepseek": "DEEPSEEK_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
 }
+
+_PROVIDER_LABELS = {
+    "anthropic": "Anthropic",
+    "openai": "OpenAI",
+    "google": "Google",
+    "deepseek": "DeepSeek",
+    "openrouter": "OpenRouter",
+    "openai_compatible": "OpenAI-compatible (DeepSeek/Kimi)",
+}
+
+
+def _safe(text: str | None) -> str:
+    return (text or "").strip()
 
 
 def _load_global() -> dict[str, Any]:
@@ -47,21 +61,53 @@ def _keys_from_env() -> dict[str, str]:
     return found
 
 
-def needs_api_keys() -> bool:
+def _merged_keys(data: dict[str, Any]) -> dict[str, str]:
+    keys = dict(data.get("api_keys") or {})
+    keys.update(_keys_from_env())
+    return {k: v for k, v in keys.items() if v}
+
+
+def _provider_for_model(model_id: str) -> str:
+    reg = DynamicRegistry(ensure_models_yaml())
+    meta = reg.get_model(model_id) or {}
+    return str(meta.get("provider") or "openai")
+
+
+def _has_key_for_provider(keys: dict[str, str], provider: str) -> bool:
+    if keys.get(provider):
+        return True
+    if provider == "openai_compatible" and (keys.get("openai") or keys.get("deepseek")):
+        return True
+    if provider == "openrouter" and keys.get("openai"):
+        return True
+    return False
+
+
+def needs_quick_setup() -> bool:
+    """True when we should run the in-terminal setup wizard."""
     data = _load_global()
-    keys = {**_keys_from_env(), **(data.get("api_keys") or {})}
-    return not any(keys.values())
+    if not _merged_keys(data):
+        return True
+    if not data.get("default_model"):
+        return True
+    return False
+
+
+def needs_api_keys() -> bool:
+    return not bool(_merged_keys(_load_global()))
 
 
 def hermes_quick_setup(
     project_path: Path | None = None,
     *,
     ask_keys: bool = True,
+    ask_model: bool = True,
     init_project: bool = True,
 ) -> ProjectContext:
     """
-    ~3 prompts max: API key, optional goal, done.
-    Keys can be set via ANTHROPIC_API_KEY etc. — zero prompts.
+    1) Choose model (numbered list)
+    2) API key for that model's provider (or skip if env/config has it)
+    3) Init project
     """
     root = resolve_project_root(project_path)
     ensure_models_yaml()
@@ -75,33 +121,44 @@ def hermes_quick_setup(
             "git": {"auto_commit": False, "auto_commit_message_prefix": "ce:"},
         }
 
-    keys = dict(data.get("api_keys") or {})
-    keys.update(_keys_from_env())
+    keys = _merged_keys(data)
 
-    if ask_keys and not any(keys.values()):
+    if ask_model or ask_keys:
+        formatters.print_rule("Cognition Engine — setup")
+        formatters.print_info("Step 1: choose your model · Step 2: API key for that provider")
+
+    if ask_model:
+        default_id = str(data.get("default_model") or "claude-haiku-20240307")
+        model_id = prompt_select_model(default_id=default_id, interactive=True)
+        data["default_model"] = model_id
+    elif not data.get("default_model"):
+        data["default_model"] = "claude-haiku-20240307"
+
+    model_id = str(data["default_model"])
+    provider = _provider_for_model(model_id)
+    reg = DynamicRegistry(ensure_models_yaml())
+    meta = reg.get_model(model_id) or {}
+    display = meta.get("display_name") or model_id
+
+    if ask_keys and not _has_key_for_provider(keys, provider):
         from src.cli import prompts
 
-        formatters.print_rule("Cognition Engine — quick setup")
-        formatters.print_info("Tip: export ANTHROPIC_API_KEY=... to skip prompts next time.")
-        key = prompts.ask_text("Anthropic API key (recommended)", default="")
-        if key.strip():
-            keys["anthropic"] = key.strip()
-            data["default_model"] = "claude-haiku-20240307"
+        label = _PROVIDER_LABELS.get(provider, provider)
+        formatters.print_info(f"Step 2: API key for [bold]{display}[/] ({label})")
+        formatters.print_info(
+            f"Or export {_ENV_KEYS.get(provider, 'OPENAI_API_KEY')} and re-run."
+        )
+        entered = _safe(
+            prompts.ask_text(f"{label} API key", default="")
+        )
+        if entered:
+            keys[provider] = entered
+            if provider == "openai_compatible":
+                keys.setdefault("openai", entered)
         else:
-            key = prompts.ask_text("OpenAI API key (optional)", default="")
-            if key.strip():
-                keys["openai"] = key.strip()
-                data["default_model"] = "gpt-4o-mini"
+            formatters.print_warning("No key entered — chat will not work until /keys or /setup.")
 
-    data["api_keys"] = keys
-    if not data.get("default_model"):
-        if keys.get("anthropic"):
-            data["default_model"] = "claude-haiku-20240307"
-        elif keys.get("openai"):
-            data["default_model"] = "gpt-4o-mini"
-        else:
-            data["default_model"] = "claude-haiku-20240307"
-
+    data["api_keys"] = {**dict(data.get("api_keys") or {}), **keys}
     _save_global(data)
 
     ctx = ProjectContext(root)
@@ -114,30 +171,29 @@ def hermes_quick_setup(
             cfg.write_text(
                 yaml.safe_dump(
                     {
-                        "default_model": data["default_model"],
+                        "default_model": model_id,
                         "git": {"auto_commit": True, "auto_commit_message_prefix": "ce:"},
                     },
                     default_flow_style=False,
                 ),
                 encoding="utf-8",
             )
-    elif ctx.is_initialized():
-        ctx.config.update("default_model", str(data["default_model"]), persist=True)
+    else:
+        ctx.config.update("default_model", model_id, persist=True)
 
     summary = {
-        "default_model": data["default_model"],
+        "default_model": model_id,
         "project_path": str(root),
-        "api_keys_configured": list(keys.keys()),
+        "api_keys_configured": list(_merged_keys(data).keys()),
         "install_type": "slim",
         "git_initialized": is_git_repo(root),
     }
     save_last_setup(summary)
     save_project_setup_summary(root, summary)
 
-    formatters.print_success(f"Ready — project: {root.name} · model: {data['default_model']}")
-    if keys:
-        formatters.print_info(f"Keys: {', '.join(keys.keys())}")
-    else:
-        formatters.print_warning("No API keys yet — chat won't work until you add one.")
-    formatters.print_info("Start chatting: cognition-engine")
+    formatters.print_success(f"Ready — model: {display} ({model_id}) · project: {root.name}")
+    active_keys = _merged_keys(data)
+    if active_keys:
+        formatters.print_info(f"API keys: {', '.join(active_keys.keys())}")
+    formatters.print_info("Launching agent console…")
     return ctx

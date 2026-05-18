@@ -25,12 +25,11 @@ def run_repl(project_root: Path | None = None) -> None:
     model = bridge.ctx.config.get("default_model", "?")
     console.print(
         Panel(
-            "[bold]Cognition Engine[/bold] — agent console\n"
+            "[bold]Cognition Engine[/bold] — line mode (agent console UI failed or CE_SIMPLE_REPL=1)\n"
             f"Project: {bridge.root} | Model: {model}\n"
-            "[dim]Memory:[/] DNA + sessions + insights · [dim]RL:[/] Q-learning on /end\n"
-            "Commands: /help /start /end /memory /rl /keys /model /plan /status\n"
-            "Setup in-terminal: /setup",
-            title="CE",
+            "[dim]Memory + RL on /end · /model or Ctrl+M in full UI[/]\n"
+            "Commands: /help /start /end /memory /rl /keys /model /plan /status /setup",
+            title="CE line mode",
             border_style="blue",
         )
     )
@@ -99,7 +98,8 @@ def run_repl(project_root: Path | None = None) -> None:
 
 def run_repl_textual(project_root: Path | None = None) -> None:
     """Textual TUI; falls back to rich REPL with error shown once."""
-    if os.environ.get("CE_SIMPLE_REPL", "1") == "1":
+    # Default: full agent console (Textual). Fallback: rich line mode.
+    if os.environ.get("CE_SIMPLE_REPL") == "1":
         run_repl(project_root)
         return
     try:
@@ -109,10 +109,13 @@ def run_repl_textual(project_root: Path | None = None) -> None:
         app.run()
     except Exception as exc:
         console = Console(stderr=True)
-        console.print(f"[yellow]Graphical UI unavailable ({exc}).[/]")
+        console.print(f"[yellow]Agent console UI unavailable ({exc}).[/]")
         if os.environ.get("CE_REPL_DEBUG"):
             traceback.print_exc()
-        console.print("[dim]Using terminal chat mode (same commands). Set CE_SIMPLE_REPL=1 to skip TUI.[/]\n")
+        console.print(
+            "[dim]Using line mode (same commands). "
+            "Force UI: unset CE_SIMPLE_REPL · Force line: CE_SIMPLE_REPL=1[/]\n"
+        )
         run_repl(project_root)
 
 

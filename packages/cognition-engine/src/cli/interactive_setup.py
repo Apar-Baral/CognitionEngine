@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from src.cli.context import ProjectContext, resolve_project_root
-from src.cli.hermes_setup import hermes_quick_setup, needs_api_keys
+from src.cli.hermes_setup import hermes_quick_setup, needs_quick_setup
 
 
 def ensure_interactive_ready(
@@ -22,8 +22,8 @@ def ensure_interactive_ready(
         return ProjectContext(resolve_project_root(project_root))
 
     root = resolve_project_root(project_root)
-    if interactive and needs_api_keys():
-        ctx = hermes_quick_setup(root, ask_keys=True, init_project=False)
+    if interactive and needs_quick_setup():
+        ctx = hermes_quick_setup(root, ask_keys=True, ask_model=True, init_project=False)
         os.environ["CE_SETUP_DONE"] = "1"
         return ctx
 
