@@ -1,15 +1,12 @@
 """Cognition Engine REPL visual theme."""
 
-CE_BRAND_MARKUP = """[bold #58a6ff]╔══════════════════════╗[/]
-[bold #58a6ff]║[/] [bold white] ██████╗███████╗[/] [bold #58a6ff]║[/]
-[bold #58a6ff]║[/] [bold white]██╔════╝██╔════╝[/] [bold #58a6ff]║[/]
-[bold #58a6ff]║[/] [bold white]██║     █████╗[/]  [bold #58a6ff]║[/]
-[bold #58a6ff]║[/] [bold white]██║     ██╔══╝[/]  [bold #58a6ff]║[/]
-[bold #58a6ff]║[/] [bold white]╚██████╗███████╗[/] [bold #58a6ff]║[/]
-[bold #58a6ff]║[/] [bold #6cb6ff] COGNITION ENGINE [/] [bold #58a6ff]║[/]
-[bold #58a6ff]╚══════════════════════╝[/]
-[dim]      advanced agent console[/]
-[bold #e6edf3]      By Apar Baral[/]"""
+CE_BRAND_MARKUP = """[bold #58a6ff]╭──────────────────────────╮[/]
+[bold #58a6ff]│[/] [bold white on #0d1520]  ▄▀█ █▀▀ █▄ █ █▀▀ █ █[/] [bold #58a6ff]│[/]
+[bold #58a6ff]│[/] [bold white on #0d1520]  █▀█ ██▄ █ ▀█ █▄▄ █▀█[/] [bold #58a6ff]│[/]
+[bold #58a6ff]│[/] [bold #6cb6ff]  COGNITION ENGINE[/]        [bold #58a6ff]│[/]
+[bold #58a6ff]│[/] [dim]  agent console · v3[/]          [bold #58a6ff]│[/]
+[bold #58a6ff]╰──────────────────────────╯[/]
+[bold #e6edf3]     By Apar Baral[/]"""
 
 CE_APP_CSS = """
 Screen {
@@ -135,9 +132,9 @@ Footer {
 }
 
 #trace-rail {
-    width: 34;
-    min-width: 30;
-    max-width: 40;
+    width: 38;
+    min-width: 34;
+    max-width: 44;
     height: 1fr;
     background: #080c10;
     border-left: solid #2d3a4f;
@@ -170,6 +167,34 @@ Footer {
     content-align: left middle;
 }
 
+#token-bar {
+    height: 2;
+    background: #0d1520;
+    border: solid #3d5a80;
+    padding: 0 2;
+    color: #8b949e;
+    content-align: left middle;
+}
+
+#tips-bar {
+    height: 2;
+    background: #0a0e14;
+    border-top: solid #2d3a4f;
+    padding: 0 1;
+    color: #768390;
+    text-style: italic;
+}
+
+#thinking-bar {
+    height: 2;
+    min-height: 2;
+    padding: 0 2;
+    background: #152238;
+    border-bottom: solid #6cb6ff;
+    color: #6cb6ff;
+    text-style: bold;
+}
+
 #tracker-panel {
     height: auto;
     max-height: 5;
@@ -197,15 +222,6 @@ Footer {
     margin: 1 0 0 0;
     scrollbar-background: #070b10;
     scrollbar-color: #3d5a80;
-}
-
-#thinking-bar {
-    height: 1;
-    min-height: 1;
-    padding: 0 2;
-    background: #131a24;
-    border-bottom: solid #2d3a4f;
-    color: #6cb6ff;
 }
 
 #thinking-bar:empty {

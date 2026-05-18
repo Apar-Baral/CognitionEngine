@@ -9,6 +9,16 @@ from typing import Any
 import yaml
 
 from src.cli import formatters
+from src.cli.api_key_providers import (
+    _ENV_KEYS,
+    _KEY_LABELS,
+    api_key_storage_provider,
+    env_var_for_model,
+    format_configured_keys,
+    has_key_for_model,
+    model_provider,
+    provider_label_for_model,
+)
 from src.cli.context import ProjectContext, resolve_project_root
 from src.cli.git_helpers import is_git_repo, write_project_gitignore
 from src.cli.model_picker import prompt_select_model
@@ -16,22 +26,7 @@ from src.cli.setup_summary import save_last_setup, save_project_setup_summary
 from src.core.constants import GLOBAL_CONFIG_PATH
 from src.models.dynamic_registry import DynamicRegistry, ensure_models_yaml
 
-_ENV_KEYS = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "google": "GOOGLE_API_KEY",
-    "deepseek": "DEEPSEEK_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
-}
-
-_PROVIDER_LABELS = {
-    "anthropic": "Anthropic",
-    "openai": "OpenAI",
-    "google": "Google",
-    "deepseek": "DeepSeek",
-    "openrouter": "OpenRouter",
-    "openai_compatible": "OpenAI-compatible (DeepSeek/Kimi)",
-}
+_PROVIDER_LABELS = {**_KEY_LABELS, "openai_compatible": "OpenAI-compatible (DeepSeek/Kimi)"}
 
 
 def _safe(text: str | None) -> str:
@@ -68,17 +63,17 @@ def _merged_keys(data: dict[str, Any]) -> dict[str, str]:
 
 
 def _provider_for_model(model_id: str) -> str:
-    reg = DynamicRegistry(ensure_models_yaml())
-    meta = reg.get_model(model_id) or {}
-    return str(meta.get("provider") or "openai")
+    return model_provider(model_id)
 
 
-def _has_key_for_provider(keys: dict[str, str], provider: str) -> bool:
+def _has_key_for_provider(keys: dict[str, str], provider: str, *, model_id: str = "") -> bool:
+    if model_id:
+        return has_key_for_model(keys, model_id)
     if keys.get(provider):
         return True
     if provider == "openai_compatible" and (keys.get("openai") or keys.get("deepseek")):
         return True
-    if provider == "openrouter" and keys.get("openai"):
+    if provider == "openrouter" and keys.get("openrouter"):
         return True
     return False
 
@@ -92,8 +87,7 @@ def needs_quick_setup() -> bool:
     if not keys:
         return True
     model_id = str(data.get("default_model"))
-    provider = _provider_for_model(model_id)
-    if not _has_key_for_provider(keys, provider):
+    if not has_key_for_model(keys, model_id):
         return True
     return False
 
@@ -129,12 +123,10 @@ def persist_setup_choices(
 
     reg = DynamicRegistry(ensure_models_yaml())
     mid = resolve_model_id(model_id, reg) or model_id.strip()
-    provider = _provider_for_model(mid)
+    bucket = api_key_storage_provider(mid)
     file_keys = dict(data.get("api_keys") or {})
     if api_key and api_key.strip():
-        file_keys[provider] = api_key.strip()
-        if provider == "openai_compatible":
-            file_keys.setdefault("openai", api_key.strip())
+        file_keys[bucket] = api_key.strip()
     data["api_keys"] = file_keys
     data["default_model"] = mid
     git = data.setdefault("git", {})
@@ -175,6 +167,9 @@ def persist_setup_choices(
         "default_model": mid,
         "project_path": str(root),
         "api_keys_configured": list(_merged_keys(data).keys()),
+        "api_keys_display": format_configured_keys(
+            list(_merged_keys(data).keys()), model_id=mid
+        ),
         "install_type": "slim",
         "git_initialized": is_git_repo(root),
     }
@@ -231,21 +226,19 @@ def hermes_quick_setup(
     meta = reg.get_model(model_id) or {}
     display = meta.get("display_name") or model_id
 
-    if ask_keys and not _has_key_for_provider(keys, provider):
+    if ask_keys and not has_key_for_model(keys, model_id):
         from src.cli import prompts
 
-        label = _PROVIDER_LABELS.get(provider, provider)
+        bucket = api_key_storage_provider(model_id)
+        label = provider_label_for_model(model_id)
+        env_var = env_var_for_model(model_id)
         formatters.print_info(f"Step 2: API key for [bold]{display}[/] ({label})")
-        formatters.print_info(
-            f"Or export {_ENV_KEYS.get(provider, 'OPENAI_API_KEY')} and re-run."
-        )
+        formatters.print_info(f"Or export {env_var} and re-run.")
         entered = _safe(
             prompts.ask_text(f"{label} API key", default="")
         )
         if entered:
-            keys[provider] = entered
-            if provider == "openai_compatible":
-                keys.setdefault("openai", entered)
+            keys[bucket] = entered
         else:
             formatters.print_warning("No key entered — chat will not work until /keys or /setup.")
 
@@ -281,6 +274,9 @@ def hermes_quick_setup(
         "default_model": model_id,
         "project_path": str(root),
         "api_keys_configured": list(_merged_keys(data).keys()),
+        "api_keys_display": format_configured_keys(
+            list(_merged_keys(data).keys()), model_id=mid
+        ),
         "install_type": "slim",
         "git_initialized": is_git_repo(root),
     }
@@ -290,6 +286,8 @@ def hermes_quick_setup(
     formatters.print_success(f"Ready — model: {display} ({model_id}) · project: {root.name}")
     active_keys = _merged_keys(data)
     if active_keys:
-        formatters.print_info(f"API keys: {', '.join(active_keys.keys())}")
+        formatters.print_info(
+            f"API keys: {format_configured_keys(list(active_keys.keys()), model_id=model_id)}"
+        )
     formatters.print_info("Launching agent console…")
     return ctx

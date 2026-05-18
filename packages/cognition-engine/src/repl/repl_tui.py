@@ -40,6 +40,8 @@ from src.cli.setup_summary import (
 )
 from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP
 from src.repl.session_bridge import SessionBridge
+from src.repl.tips import CE_TIPS
+from src.repl.trace_viz import trace_lane_markup
 
 COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-model", "Change model", "primary"),
@@ -59,6 +61,14 @@ COMMAND_HINTS = """[dim]Chat:[/] center · trace panel right
 [dim]Git:[/] you commit in your shell — CE won't"""
 
 _THINK_FRAMES = ("◐", "◓", "◑", "◒")
+_THINK_PHASES = (
+    "Reading project context",
+    "Assembling memory & plan",
+    "Calling the model",
+    "Waiting for response",
+    "Parsing & validating",
+)
+_THINK_DOTS = ("", ".", "..", "...")
 
 
 @dataclass(frozen=True)
@@ -214,7 +224,7 @@ class QuickSetupScreen(ModalScreen[bool]):
         self.query_one("#setup-api-key", Input).focus()
 
     def _refresh_model_line(self) -> None:
-        from src.cli.hermes_setup import _ENV_KEYS, _PROVIDER_LABELS
+        from src.cli.api_key_providers import env_var_for_model, provider_label_for_model
         from src.cli.model_picker import resolve_model_id
 
         reg = self.bridge.ctx.model_registry()
@@ -222,14 +232,13 @@ class QuickSetupScreen(ModalScreen[bool]):
         self._model_id = mid
         meta = reg.get_model(mid) or {}
         name = meta.get("display_name") or mid
-        prov = str(meta.get("provider") or "openai")
+        label = provider_label_for_model(mid)
+        env_var = env_var_for_model(mid)
         self.query_one("#setup-model-line", Static).update(
             f"Model: [cyan]{name}[/] [dim]({mid})[/]"
         )
-        label = _PROVIDER_LABELS.get(prov, prov)
-        env_var = _ENV_KEYS.get(prov, "OPENAI_API_KEY")
         self.query_one("#setup-provider-hint", Static).update(
-            f"[dim]API key for {label} · or export {env_var}[/]"
+            f"[dim]API key for [bold]{label}[/] · export {env_var}[/]"
         )
 
     @on(Button.Pressed, "#setup-pick-model")
@@ -291,15 +300,27 @@ class CognitionReplApp(App):
         self._select_syncing = False
         self._active_model_id = str(self.bridge.ctx.config.get("default_model", ""))
         self._thinking_timer: Timer | None = None
+        self._tips_timer: Timer | None = None
         self._thinking_tick = 0
+        self._tip_index = 0
         self._chat_busy = False
         self._last_user_prompt = ""
+        self._live_tokens: dict[str, int] = {
+            "input": 0,
+            "output": 0,
+            "total": 0,
+            "last_turn": 0,
+        }
 
     def _build_agent(self):
         try:
             from src.agent.orchestrator import AgentOrchestrator
 
-            return AgentOrchestrator(self.bridge.ctx, on_activity=self._on_agent_activity)
+            return AgentOrchestrator(
+                self.bridge.ctx,
+                on_activity=self._on_agent_activity,
+                on_tokens=self._on_agent_tokens,
+            )
         except Exception:
             return None
 
@@ -308,6 +329,21 @@ class CognitionReplApp(App):
             self.call_from_thread(self._log_work, msg)
         except RuntimeError:
             self._log_work(msg)
+
+    def _on_agent_tokens(self, usage: dict[str, int]) -> None:
+        try:
+            self.call_from_thread(self._apply_token_usage, usage)
+        except RuntimeError:
+            self._apply_token_usage(usage)
+
+    def _apply_token_usage(self, usage: dict[str, int]) -> None:
+        self._live_tokens = {
+            "input": int(usage.get("input", 0)),
+            "output": int(usage.get("output", 0)),
+            "total": int(usage.get("total", 0)),
+            "last_turn": int(usage.get("last_turn", 0)),
+        }
+        self._refresh_token_bar()
 
     def _try_bind_last_project(self) -> None:
         """Do not auto-switch to a different directory than cwd (avoids surprise project context)."""
@@ -374,6 +410,7 @@ class CognitionReplApp(App):
                     yield Static(COMMAND_HINTS, id="command-hints", markup=True)
             with Vertical(id="chat-column"):
                 yield Static(self._top_bar_text(), id="top-bar", markup=True)
+                yield Static(self._token_bar_text(), id="token-bar", markup=True)
                 yield Static(self._tracker_text(), id="tracker-panel", markup=True)
                 yield Static(
                     "[dim]Your message appears below when you send[/]",
@@ -398,6 +435,7 @@ class CognitionReplApp(App):
                     id="trace-hint",
                     markup=True,
                 )
+        yield Static(self._tip_text(), id="tips-bar", markup=True)
         yield Footer()
 
     def _setup_panel_text(self) -> str:
@@ -427,6 +465,51 @@ class CognitionReplApp(App):
             f"[dim]│[/]  {st}"
         )
 
+    def _token_bar_text(self) -> str:
+        t = self._live_tokens
+        if self.bridge.ctx.is_initialized():
+            try:
+                op = self.bridge.ctx.active_operational_memory()
+                totals = op.get_session_summary().get("tokens") or {}
+                if totals.get("total", 0) > t["total"]:
+                    t = {
+                        "input": totals["input"],
+                        "output": totals["output"],
+                        "total": totals["total"],
+                        "last_turn": t.get("last_turn", 0),
+                    }
+            except Exception:
+                pass
+        if t["total"] <= 0 and t["last_turn"] <= 0:
+            return (
+                "[dim]Tokens[/]  [white]0[/]  "
+                "[dim]↑ in · ↓ out · updates each model turn[/]"
+            )
+        return (
+            f"[bold #e3b341]⚡ Tokens[/]  "
+            f"[white]{t['total']:,}[/] total  "
+            f"[dim]↑[/][#79c0ff]{t['input']:,}[/] "
+            f"[dim]↓[/][#a5d6ff]{t['output']:,}[/]  "
+            f"[dim]last turn[/] [bold]+{t['last_turn']:,}[/]"
+        )
+
+    def _refresh_token_bar(self) -> None:
+        try:
+            self.query_one("#token-bar", Static).update(self._token_bar_text())
+        except Exception:
+            pass
+
+    def _tip_text(self) -> str:
+        tip = CE_TIPS[self._tip_index % len(CE_TIPS)]
+        return f"[bold #6cb6ff]Tip[/]  {tip}"
+
+    def _tick_tip(self) -> None:
+        self._tip_index += 1
+        try:
+            self.query_one("#tips-bar", Static).update(self._tip_text())
+        except Exception:
+            pass
+
     def _sync_model_select(self) -> None:
         from src.cli.model_picker import resolve_model_id
 
@@ -450,13 +533,14 @@ class CognitionReplApp(App):
 
     def _refresh_chrome(self, *, sync_select: bool = False) -> None:
         self.query_one("#top-bar", Static).update(self._top_bar_text())
+        self._refresh_token_bar()
         self.query_one("#tracker-panel", Static).update(self._tracker_text())
         self.query_one("#setup-panel", Static).update(self._setup_panel_text())
         if sync_select:
             self._sync_model_select()
 
     def _log_work(self, text: str) -> None:
-        self.query_one("#activity-log", RichLog).write(f"[cyan]▸[/] [italic]{text}[/]")
+        self.query_one("#activity-log", RichLog).write(trace_lane_markup(text))
         self.query_one("#activity-scroll", VerticalScroll).scroll_end(animate=False)
 
     def _apply_model_from_ui(self, model_id: str) -> None:
@@ -552,10 +636,12 @@ class CognitionReplApp(App):
 
     def _tick_thinking(self) -> None:
         frame = _THINK_FRAMES[self._thinking_tick % len(_THINK_FRAMES)]
+        phase = _THINK_PHASES[(self._thinking_tick // 2) % len(_THINK_PHASES)]
+        dots = _THINK_DOTS[self._thinking_tick % len(_THINK_DOTS)]
         self._thinking_tick += 1
         self.query_one("#thinking-bar", Static).update(
-            f"[bold #6cb6ff]{frame}[/] [italic]Thinking[/] "
-            f"[dim]· scroll chat · Esc cancel[/]"
+            f"[bold #6cb6ff]{frame}[/] [italic]{phase}[/][dim]{dots}[/]  "
+            f"[dim]Esc cancel · tokens update live above[/]"
         )
 
     def _stop_thinking(self) -> None:
@@ -595,6 +681,7 @@ class CognitionReplApp(App):
         self._try_bind_last_project()
         self._active_model_id = str(self.bridge.ctx.config.get("default_model", ""))
         self._sync_model_select()
+        self._tips_timer = self.set_interval(12.0, self._tick_tip)
         log = self.query_one(RichLog)
         log.write("[bold #6cb6ff]Cognition Engine[/] ready")
         log.write(
@@ -736,6 +823,8 @@ class CognitionReplApp(App):
             self._log_system(
                 "Chat needs an API key. Click [bold]Setup keys[/] or type /keys"
             )
+        if self._agent:
+            self._apply_token_usage(dict(self._agent.session_tokens))
         self._refresh_chrome(sync_select=False)
         self.query_one("#input", Input).focus()
         self._scroll_chat_end()

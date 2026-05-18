@@ -36,6 +36,7 @@ class AgentOrchestrator:
         ctx: ProjectContext,
         *,
         on_activity: Callable[[str], None] | None = None,
+        on_tokens: Callable[[dict[str, int]], None] | None = None,
     ) -> None:
         self.ctx = ctx
         self.assembler = ContextAssembler(ctx)
@@ -44,6 +45,13 @@ class AgentOrchestrator:
         self.parser = ResponseParser()
         self._history: list[dict[str, str]] = []
         self._on_activity = on_activity or (lambda _msg: None)
+        self._on_tokens = on_tokens or (lambda _u: None)
+        self.session_tokens: dict[str, int] = {
+            "input": 0,
+            "output": 0,
+            "total": 0,
+            "last_turn": 0,
+        }
 
     def _activity(self, msg: str) -> None:
         try:
@@ -58,7 +66,15 @@ class AgentOrchestrator:
         if key:
             return key
         if provider == "openai_compatible":
-            for alt in ("deepseek", "openai"):
+            from src.cli.api_key_providers import api_key_storage_provider
+
+            model_id = str(config.get("default_model", ""))
+            preferred = api_key_storage_provider(model_id)
+            seen: set[str] = set()
+            for alt in (preferred, "deepseek", "openai", "openai_compatible"):
+                if alt in seen:
+                    continue
+                seen.add(alt)
                 key = config.get_api_key(alt)
                 if key:
                     return key
@@ -162,7 +178,28 @@ class AgentOrchestrator:
             return self.tools.suggest_next(self.ctx)
         return f"Unknown tool: {name}"
 
+    def _emit_tokens(self, usage: dict[str, int]) -> None:
+        inp = int(usage.get("input_tokens", 0))
+        out = int(usage.get("output_tokens", 0))
+        turn = inp + out
+        self.session_tokens["input"] += inp
+        self.session_tokens["output"] += out
+        self.session_tokens["total"] += turn
+        self.session_tokens["last_turn"] = turn
+        try:
+            self._on_tokens(
+                {
+                    "input_tokens": inp,
+                    "output_tokens": out,
+                    "turn_total": turn,
+                    **self.session_tokens,
+                }
+            )
+        except Exception:
+            logger.debug("token callback failed", exc_info=True)
+
     def _log_tokens(self, usage: dict[str, int]) -> None:
+        self._emit_tokens(usage)
         state = self.ctx.load_session_state()
         if not state:
             return
