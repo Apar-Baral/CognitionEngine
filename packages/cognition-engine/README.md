@@ -76,6 +76,14 @@ source ~/CognitionEngine/packages/cognition-engine/.venv/bin/activate
 cognition-engine setup --project ~/projects/your-app
 ```
 
+**Upgrade** (re-run installer — it now pulls latest source every time; old installs stayed on 0.3.1 if the folder already existed):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Apar-Baral/CognitionEngine/master/scripts/install-ce.sh | bash
+# or force full re-download:
+CE_REFRESH=1 curl -fsSL https://raw.githubusercontent.com/Apar-Baral/CognitionEngine/master/scripts/install-ce.sh | bash
+```
+
 Default install is **slim (~200MB)**. Do **not** run `pip install -e ".[semantic]"` unless you need vector memory (~4GB PyTorch download).
 
 ```bash

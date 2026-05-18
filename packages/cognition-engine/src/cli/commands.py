@@ -5,6 +5,8 @@ Typer CLI commands for Cognition Engine (`cc`).
 from __future__ import annotations
 
 import json
+import sys
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -398,6 +400,51 @@ def cmd_end(
         )
     except Exception as e:
         _handle_error(e)
+
+
+@app.command("upgrade")
+def cmd_upgrade(
+    refresh: bool = typer.Option(
+        False,
+        "--refresh",
+        help="Force full re-download (same as CE_REFRESH=1)",
+    ),
+) -> None:
+    """Pull latest Cognition Engine from GitHub and reinstall in the CE venv."""
+    from src.core.env_guard import cognition_engine_home, cognition_venv_python, is_venv_active
+
+    home = cognition_engine_home()
+    pkg = home / "packages" / "cognition-engine"
+    venv_py = cognition_venv_python()
+
+    formatters.print_rule("Upgrade Cognition Engine")
+    formatters.print_info(f"Install root: {home}")
+
+    if refresh or not (home / ".git").is_dir():
+        formatters.print_warning(
+            "Run the installer to fetch latest source:\n"
+            "  curl -fsSL https://raw.githubusercontent.com/Apar-Baral/CognitionEngine/master/scripts/install-ce.sh | bash\n"
+            "Or force refresh:\n"
+            "  CE_REFRESH=1 curl -fsSL https://raw.githubusercontent.com/Apar-Baral/CognitionEngine/master/scripts/install-ce.sh | bash"
+        )
+        raise typer.Exit(1)
+
+    try:
+        subprocess.run(["git", "-C", str(home), "fetch", "origin", "master"], check=True)
+        subprocess.run(["git", "-C", str(home), "reset", "--hard", "origin/master"], check=True)
+        formatters.print_success("Git source updated.")
+    except subprocess.CalledProcessError as exc:
+        formatters.print_error(f"git update failed: {exc}")
+        raise typer.Exit(1) from exc
+
+    pip_py = str(venv_py) if venv_py else sys.executable
+    if not is_venv_active():
+        formatters.print_info(f"Using CE venv: {pip_py}")
+    subprocess.run([pip_py, "-m", "pip", "install", "-e", str(pkg), "--upgrade"], check=True)
+    ce_bin = venv_py.parent / "cognition-engine" if venv_py else Path("cognition-engine")
+    ver = subprocess.run([str(ce_bin), "--version"], capture_output=True, text=True, check=False)
+    out = (ver.stdout or ver.stderr or "").strip() or "unknown"
+    formatters.print_success(f"Upgraded: cognition-engine {out}")
 
 
 @app.command("doctor")
