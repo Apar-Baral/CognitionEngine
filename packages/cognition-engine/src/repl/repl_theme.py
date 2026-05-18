@@ -148,14 +148,18 @@ Footer {
     margin: 0 0 1 0;
 }
 
-#token-bar {
-    height: 2;
-    min-height: 2;
-    background: #131a24;
-    border: solid #3d5a80;
+#prompt-display.hidden {
+    display: none;
+}
+
+#prompt-display {
+    height: auto;
+    max-height: 3;
     padding: 0 2;
-    color: #e6edf3;
-    margin: 0;
+    margin: 0 0 1 0;
+    background: transparent;
+    border: none;
+    color: #8b949e;
 }
 
 #tips-bar {
@@ -204,16 +208,6 @@ Footer {
 #thinking-detail {
     height: auto;
     color: #6cb6ff;
-}
-
-#prompt-display {
-    height: 1;
-    min-height: 1;
-    max-height: 2;
-    padding: 0 2;
-    background: #0d1520;
-    border: solid #2d3a4f;
-    color: #8b949e;
 }
 
 #trace-rail {

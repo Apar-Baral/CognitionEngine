@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.agent.ce_identity import ce_platform_identity
 from src.cli.context import ProjectContext
 
 
@@ -18,6 +19,7 @@ class ContextAssembler:
             "Execute tools until the user's request is complete — do not only describe plans.",
             f"Project root: {self.ctx.root}",
             "Stay on the active phase and project goal.",
+            ce_platform_identity(self.ctx),
         ]
         goal = self.ctx.get_project_goal()
         if goal:
@@ -44,10 +46,11 @@ class ContextAssembler:
     def build_quick_prompt(self) -> str:
         """Light system prompt for conversational / simple Q&A (no tools)."""
         parts = [
-            "You are Cognition Engine, a helpful coding assistant.",
+            "You are Cognition Engine (CE) — the project's AI orchestrator, not a generic model.",
             "Answer clearly and concisely. Do not use tools or JSON tool syntax.",
             "Do not output DSML or XML tool blocks — plain markdown only.",
             f"Project: {self.ctx.root}",
+            ce_platform_identity(self.ctx),
         ]
         goal = self.ctx.get_project_goal()
         if goal:

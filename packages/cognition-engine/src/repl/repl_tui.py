@@ -338,7 +338,7 @@ class CognitionReplApp(App):
         Binding("ctrl+m", "pick_model", "Models", show=True),
         Binding("ctrl+s", "action_start", "Start", show=True),
         Binding("ctrl+e", "prompt_end", "End", show=True),
-        Binding("ctrl+shift+c", "copy_last_reply", "Copy reply", show=True),
+        Binding("ctrl+shift+c", "copy_smart", "Copy", show=True),
         Binding("ctrl+shift+t", "copy_trace", "Copy trace", show=True),
         Binding("ctrl+shift+a", "copy_chat_log", "Copy all", show=True),
         Binding("ctrl+insert", "copy_smart", "Copy", show=False),
@@ -570,18 +570,13 @@ class CognitionReplApp(App):
                         auto_scroll=True,
                         min_width=20,
                     )
-                yield Static(self._token_bar_text(), id="token-bar", markup=True)
                 with Vertical(id="thinking-box"):
                     with Horizontal(id="thinking-head"):
                         yield LoadingIndicator(id="think-spinner")
                         yield Static("", id="chat-thinking", markup=True)
                     yield Static("", id="task-list", markup=True)
                     yield Static("", id="thinking-detail", markup=True)
-                yield Static(
-                    "[dim]Your message[/]",
-                    id="prompt-display",
-                    markup=True,
-                )
+                yield Static("", id="prompt-display", markup=True)
                 with Horizontal(id="composer"):
                     yield Static("❯", id="prompt-glyph")
                     yield Input(
@@ -600,8 +595,7 @@ class CognitionReplApp(App):
                         min_width=1,
                     )
                 yield Static(
-                    "[dim]Copy: select text with mouse (terminal) · "
-                    "Ctrl+Shift+C · ~/.cognition/last_reply.txt[/]",
+                    "[dim]Focus pane · Ctrl+Shift+C copy · PgUp/Dn scroll[/]",
                     id="trace-hint",
                     markup=True,
                 )
@@ -659,9 +653,14 @@ class CognitionReplApp(App):
     def _status_bar_text(self) -> str:
         proj = self.bridge.root.name or str(self.bridge.root)
         init = "[#3fb950]●[/]" if self.bridge.ctx.is_initialized() else "[#768390]○[/]"
+        t = self._session_token_totals()
+        tok = (
+            f"[#e3b341]⚡[/] {t['total']:,} tok "
+            f"[dim](↑{t['input']:,} ↓{t['output']:,})[/]"
+        )
         return (
-            f"{init} [bold]{proj}[/]  "
-            f"[dim]PgUp/PgDn scroll · Ctrl+M models · simple Q = fast reply[/]"
+            f"{init} [bold]{proj}[/]  {tok}  "
+            f"[dim]PgUp/Dn scroll · Ctrl+Shift+C copy focused pane[/]"
         )
 
     def _token_bar_text(self) -> str:
@@ -676,7 +675,7 @@ class CognitionReplApp(App):
 
     def _refresh_token_bar(self) -> None:
         try:
-            self.query_one("#token-bar", Static).update(self._token_bar_text())
+            self.query_one("#status-bar", Static).update(self._status_bar_text())
         except Exception:
             pass
 
@@ -768,9 +767,9 @@ class CognitionReplApp(App):
         self._last_user_prompt = text
         preview = text if len(text) <= 120 else text[:117] + "…"
         body = escape_markup(preview)
-        self.query_one("#prompt-display", Static).update(
-            f"[dim]You:[/] [white]{body}[/]"
-        )
+        pd = self.query_one("#prompt-display", Static)
+        pd.remove_class("hidden")
+        pd.update(f"[dim]You:[/] [white]{body}[/]")
         self._log(
             "\n[bold #6cb6ff]┏━ You ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
             f"[bold white]{body}[/]\n"
@@ -901,6 +900,7 @@ class CognitionReplApp(App):
             box = self.query_one("#thinking-box", Vertical)
             box.remove_class("visible")
             self.query_one("#thinking-detail", Static).update("")
+            self.query_one("#task-list", Static).update("")
         except Exception:
             pass
         if not self._typing_timer:
@@ -960,7 +960,12 @@ class CognitionReplApp(App):
         self._tips_timer = self.set_interval(12.0, self._tick_tip)
         self._token_refresh_timer = self.set_interval(1.5, self._refresh_token_bar)
         try:
-            self.query_one("#token-bar", Static).update(self._token_bar_text())
+            self.query_one("#status-bar", Static).update(self._status_bar_text())
+        except Exception:
+            pass
+        try:
+            self.query_one("#prompt-display", Static).add_class("hidden")
+            self.query_one("#thinking-box", Vertical).remove_class("visible")
         except Exception:
             pass
         log = self.query_one("#log", ChatRichLog)
@@ -1216,16 +1221,43 @@ class CognitionReplApp(App):
     def action_copy_chat_log(self) -> None:
         self._copy_text(self._all_copy_text(), label="chat + trace")
 
+    def _focused_panel_log(self) -> ChatRichLog | None:
+        """RichLog under focus, or the pane the user last clicked."""
+        w = self.focused
+        if isinstance(w, ChatRichLog):
+            return w
+        if isinstance(w, VerticalScroll):
+            try:
+                return w.query_one(ChatRichLog)
+            except Exception:
+                pass
+        # Default: chat log
+        try:
+            return self.query_one("#log", ChatRichLog)
+        except Exception:
+            return None
+
     def action_copy_smart(self) -> None:
         selected = self.screen.get_selected_text()
         if selected and selected.strip():
             self._copy_text(selected, label="selection")
             return
         focused = self.focused
-        if isinstance(focused, ChatRichLog):
-            text = focused.plain_text()
+        if focused is not None:
+            fid = getattr(focused, "id", None)
+            if fid == "activity-log":
+                self._copy_text(self._trace_plain_text(), label="agent trace")
+                return
+            if fid == "log":
+                log = self.query_one("#log", ChatRichLog)
+                self._copy_text(log.plain_text(), label="chat output")
+                return
+        log = self._focused_panel_log()
+        if log is not None:
+            text = log.plain_text()
+            label = "agent trace" if log.id == "activity-log" else "chat output"
             if text.strip():
-                self._copy_text(text, label="focused panel")
+                self._copy_text(text, label=label)
                 return
         if self._last_assistant_plain.strip():
             self.action_copy_last_reply()
@@ -1238,11 +1270,23 @@ class CognitionReplApp(App):
     def action_clear_log(self) -> None:
         self.query_one("#log", ChatRichLog).clear()
 
+    def _scroll_target(self) -> VerticalScroll:
+        w = self.focused
+        if isinstance(w, VerticalScroll):
+            return w
+        if isinstance(w, ChatRichLog):
+            parent = w.parent
+            while parent is not None:
+                if isinstance(parent, VerticalScroll):
+                    return parent
+                parent = getattr(parent, "parent", None)
+        return self.query_one("#chat-scroll", VerticalScroll)
+
     def action_scroll_up(self) -> None:
-        self.query_one("#chat-scroll", VerticalScroll).scroll_up(animate=False)
+        self._scroll_target().scroll_up(animate=False)
 
     def action_scroll_down(self) -> None:
-        self.query_one("#chat-scroll", VerticalScroll).scroll_down(animate=False)
+        self._scroll_target().scroll_down(animate=False)
 
     def action_request_quit(self) -> None:
         self.action_confirm_quit()
