@@ -77,7 +77,7 @@ def select_options_for_widget(
     *,
     current_id: str | None = None,
 ) -> list[tuple[str, str]]:
-    """(value, label) tuples for Textual Select — sorted by tier then name."""
+    """(label, value) tuples for Textual Select — value is model id."""
     reg = reg or DynamicRegistry(ensure_models_yaml())
     flat: list[tuple[str, str, str]] = []
     for mid in reg.list_models():
@@ -85,10 +85,10 @@ def select_options_for_widget(
         tier = str(meta.get("tier") or "standard")
         name = str(meta.get("display_name") or mid)
         mark = "● " if mid == current_id else ""
-        flat.append((tier, mid, f"{mark}{name}"))
+        flat.append((tier, mid, f"{mark}{name} ({mid})"))
     order = {t: i for i, t in enumerate(TIER_ORDER)}
     flat.sort(key=lambda x: (order.get(x[0], 99), x[2].lower()))
-    return [(mid, label) for _, mid, label in flat]
+    return [(label, mid) for _, mid, label in flat]
 
 
 def apply_model_choice(ctx: Any, model_id: str) -> str:

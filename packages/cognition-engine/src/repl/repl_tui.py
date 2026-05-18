@@ -161,13 +161,13 @@ class CognitionReplApp(App):
         )
         if opts:
             return opts
-        return [("claude-sonnet-4-20250514", "Default model")]
+        return [("Default model", "claude-sonnet-4-20250514")]
 
     def _model_select_value(self, options: list[tuple[str, str]]) -> str:
         current = str(self.bridge.ctx.config.get("default_model", ""))
-        if any(mid == current for mid, _ in options):
+        if any(mid == current for _, mid in options):
             return current
-        return options[0][0]
+        return options[0][1]
 
     def compose(self) -> ComposeResult:
         model_options = self._model_select_options()
@@ -228,7 +228,7 @@ class CognitionReplApp(App):
             sel.value = current
         except Exception:
             if options:
-                sel.value = options[0][0]
+                sel.value = options[0][1]
 
     def _refresh_chrome(self) -> None:
         self.query_one("#top-bar", Static).update(self._top_bar_text())
@@ -257,9 +257,10 @@ class CognitionReplApp(App):
 
     @on(Select.Changed, "#model-select")
     def _on_model_dropdown(self, event: Select.Changed) -> None:
-        if event.value is Select.BLANK or not event.value:
+        if event.value is Select.BLANK or event.value is None:
             return
-        msg = apply_model_choice(self.bridge.ctx, str(event.value))
+        model_id = str(event.value)
+        msg = apply_model_choice(self.bridge.ctx, model_id)
         self._log(f"[green]✓[/] {msg}")
         self._refresh_chrome()
 
