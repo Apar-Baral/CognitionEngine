@@ -91,6 +91,29 @@ def select_options_for_widget(
     return [(label, mid) for _, mid, label in flat]
 
 
+def normalize_model_id(raw: object, reg: DynamicRegistry | None = None) -> str | None:
+    """Reject Textual Select sentinels and invalid ids."""
+    if raw is None:
+        return None
+    try:
+        from textual.widgets import Select
+
+        if raw is Select.BLANK:
+            return None
+        null_sentinel = getattr(Select, "NULL", None)
+        if null_sentinel is not None and raw is null_sentinel:
+            return None
+    except ImportError:
+        pass
+    text = str(raw).strip()
+    if not text or text in ("Select.NULL", "Select.BLANK", "None"):
+        return None
+    reg = reg or DynamicRegistry(ensure_models_yaml())
+    if text not in reg.list_models():
+        return None
+    return text
+
+
 def apply_model_choice(ctx: Any, model_id: str) -> str:
     """Persist model to project + global config."""
     from pathlib import Path
@@ -99,8 +122,10 @@ def apply_model_choice(ctx: Any, model_id: str) -> str:
     from src.core.constants import GLOBAL_CONFIG_PATH
 
     reg = ctx.model_registry()
-    if model_id not in reg.list_models():
-        return f"Unknown model: {model_id}"
+    mid = normalize_model_id(model_id, reg)
+    if not mid:
+        return "Invalid model selection."
+    model_id = mid
     ctx.config.update("default_model", model_id, persist=True)
     gpath = Path(GLOBAL_CONFIG_PATH).expanduser()
     if gpath.is_file():

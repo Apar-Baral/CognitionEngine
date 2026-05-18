@@ -146,6 +146,8 @@ class CognitionReplApp(App):
         root = project_root or resolve_project_root()
         self.bridge = SessionBridge(root)
         self._agent = self._build_agent()
+        self._select_syncing = False
+        self._active_model_id = str(self.bridge.ctx.config.get("default_model", ""))
 
     def _build_agent(self):
         try:
@@ -248,22 +250,44 @@ class CognitionReplApp(App):
         )
 
     def _sync_model_select(self) -> None:
+        from src.cli.model_picker import normalize_model_id
+
         sel = self.query_one("#model-select", Select)
-        current = str(self.bridge.ctx.config.get("default_model", ""))
-        options = select_options_for_widget(self.bridge.ctx.model_registry(), current_id=current)
+        reg = self.bridge.ctx.model_registry()
+        current = normalize_model_id(self.bridge.ctx.config.get("default_model"), reg)
+        if not current:
+            current = reg.list_models()[0] if reg.list_models() else ""
+        options = select_options_for_widget(reg, current_id=current)
         if not options:
             return
-        sel.set_options(options)
+        self._select_syncing = True
         try:
+            sel.set_options(options)
             sel.value = current
+            self._active_model_id = current
         except Exception:
-            if options:
-                sel.value = options[0][1]
+            pass
+        finally:
+            self._select_syncing = False
 
-    def _refresh_chrome(self) -> None:
+    def _refresh_chrome(self, *, sync_select: bool = False) -> None:
         self.query_one("#top-bar", Static).update(self._top_bar_text())
         self.query_one("#setup-panel", Static).update(self._setup_panel_text())
-        self._sync_model_select()
+        if sync_select:
+            self._sync_model_select()
+
+    def _apply_model_from_ui(self, model_id: str) -> None:
+        from src.cli.model_picker import apply_model_choice, normalize_model_id
+
+        reg = self.bridge.ctx.model_registry()
+        mid = normalize_model_id(model_id, reg)
+        if not mid or mid == self._active_model_id:
+            return
+        self._active_model_id = mid
+        msg = apply_model_choice(self.bridge.ctx, mid)
+        self._log(f"[green]✓[/] {msg}")
+        self.query_one("#top-bar", Static).update(self._top_bar_text())
+        self.query_one("#setup-panel", Static).update(self._setup_panel_text())
 
     def _log(self, text: str) -> None:
         self.query_one(RichLog).write(text)
@@ -271,6 +295,7 @@ class CognitionReplApp(App):
 
     def on_mount(self) -> None:
         self._try_bind_last_project()
+        self._active_model_id = str(self.bridge.ctx.config.get("default_model", ""))
         self._sync_model_select()
         log = self.query_one(RichLog)
         log.write("[bold #6cb6ff]Cognition Engine[/] ready")
@@ -296,12 +321,9 @@ class CognitionReplApp(App):
 
     @on(Select.Changed, "#model-select")
     def _on_model_dropdown(self, event: Select.Changed) -> None:
-        if event.value is Select.BLANK or event.value is None:
+        if self._select_syncing:
             return
-        model_id = str(event.value)
-        msg = apply_model_choice(self.bridge.ctx, model_id)
-        self._log(f"[green]✓[/] {msg}")
-        self._refresh_chrome()
+        self._apply_model_from_ui(event.value)  # type: ignore[arg-type]
 
     @on(Button.Pressed)
     def _on_command_button(self, event: Button.Pressed) -> None:
@@ -331,7 +353,7 @@ class CognitionReplApp(App):
             result = fn()
             if result:
                 self._log(result)
-            self._refresh_chrome()
+            self._refresh_chrome(sync_select=False)
         except Exception as exc:
             from src.core.exceptions import DNALoadError
 
@@ -370,9 +392,15 @@ class CognitionReplApp(App):
     def _on_model_picked(self, model_id: str | None) -> None:
         if not model_id:
             return
-        msg = apply_model_choice(self.bridge.ctx, model_id)
-        self._log(f"[green]✓[/] {msg}")
-        self._refresh_chrome()
+        self._apply_model_from_ui(model_id)
+        self._select_syncing = True
+        try:
+            sel = self.query_one("#model-select", Select)
+            sel.value = self._active_model_id
+        except Exception:
+            pass
+        finally:
+            self._select_syncing = False
 
     def action_clear_log(self) -> None:
         self.query_one(RichLog).clear()
@@ -410,7 +438,7 @@ class CognitionReplApp(App):
                     self._log(format_models_table(self.bridge.ctx.model_registry()))
                 else:
                     self._log(result)
-            self._refresh_chrome()
+            self._refresh_chrome(sync_select=False)
             return
 
         if self._agent:
@@ -422,4 +450,4 @@ class CognitionReplApp(App):
                 self._log(f"[red]Error: {exc}[/]")
         else:
             self._log("[yellow]Add API keys in ~/.cognition/config.yaml[/] — buttons still work for planning/git")
-        self._refresh_chrome()
+        self._refresh_chrome(sync_select=False)
