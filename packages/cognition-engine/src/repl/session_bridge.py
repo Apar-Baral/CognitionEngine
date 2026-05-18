@@ -283,21 +283,10 @@ class SessionBridge:
         )
 
     def cmd_keys(self) -> str:
-        lines = ["API keys configured:"]
-        any_key = False
-        for p in ("anthropic", "openai", "google", "deepseek", "openrouter"):
-            if self.ctx.config.get_api_key(p):
-                lines.append(f"  ✓ {p}")
-                any_key = True
-            else:
-                lines.append(f"  · {p} (missing)")
+        from src.cli.api_key_providers import format_keys_report
+
         model_id = str(self.ctx.config.get("default_model", "?"))
-        meta = self.ctx.model_registry().get_model(model_id) or {}
-        prov = meta.get("provider", "?")
-        lines.append(f"Active model: {model_id} → provider {prov}")
-        if not any_key:
-            lines.append("Run: cognition-engine setup --project .")
-        return "\n".join(lines)
+        return format_keys_report(self.ctx.config, model_id, markup=False)
 
     def cmd_status(self) -> str:
         err = self.ensure_initialized()

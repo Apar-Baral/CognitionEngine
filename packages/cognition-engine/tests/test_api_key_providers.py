@@ -16,3 +16,11 @@ def test_has_key_deepseek_not_openai_slot() -> None:
     keys = {"deepseek": "sk-test"}
     assert has_key_for_model(keys, "deepseek-r4-pro")
     assert not has_key_for_model({}, "deepseek-r4-pro")
+
+
+def test_migrate_openai_to_deepseek_bucket() -> None:
+    from src.cli.api_key_providers import migrate_keys_for_model
+
+    keys = {"openai": "sk-deep"}
+    out = migrate_keys_for_model(keys, "deepseek-r4-pro")
+    assert out.get("deepseek") == "sk-deep"

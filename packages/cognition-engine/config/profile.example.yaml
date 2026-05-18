@@ -4,7 +4,7 @@ shield_sensitivity: medium
 git:
   auto_commit: true
   auto_commit_message_prefix: "ce:"
-  user_name: Apar-Baral
-  user_email: dedsecaparb@gmail.com
+  user_name: ""
+  user_email: ""
 repl:
   use_textual: true

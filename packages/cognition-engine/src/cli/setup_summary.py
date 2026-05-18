@@ -52,6 +52,8 @@ def load_project_setup_summary(project_root: Path) -> dict[str, Any]:
 def format_setup_summary_rich(
     global_data: dict[str, Any] | None = None,
     project_data: dict[str, Any] | None = None,
+    *,
+    ctx: Any | None = None,
 ) -> str:
     """Markup string for REPL setup panel."""
     g = global_data or {}
@@ -64,16 +66,22 @@ def format_setup_summary_rich(
     git = p.get("git_initialized", g.get("git_initialized"))
     gh = p.get("github_push", g.get("github_push", "—"))
     lines.append(f"[dim]Git[/]     [white]{'yes' if git else 'no'}[/]  [dim]GitHub[/] [white]{gh}[/]")
-    keys_display = g.get("api_keys_display") or p.get("api_keys_display")
-    if not keys_display:
-        from src.cli.api_key_providers import format_configured_keys
+    if ctx is not None:
+        from src.cli.api_key_providers import format_active_key_status
 
-        model_for_keys = str(model) if model != "—" else ""
-        keys_display = format_configured_keys(
-            g.get("api_keys_configured") or [], model_id=model_for_keys
-        )
-    if keys_display:
-        lines.append(f"[dim]API keys[/] [white]{keys_display}[/]")
+        model_id = str(ctx.config.get("default_model") or model)
+        lines.append(format_active_key_status(ctx.config, model_id))
+    else:
+        keys_display = g.get("api_keys_display") or p.get("api_keys_display")
+        if not keys_display:
+            from src.cli.api_key_providers import format_configured_keys
+
+            model_for_keys = str(model) if model != "—" else ""
+            keys_display = format_configured_keys(
+                g.get("api_keys_configured") or [], model_id=model_for_keys
+            )
+        if keys_display:
+            lines.append(f"[dim]API keys[/] [white]{keys_display}[/]")
     install = g.get("install_type", "slim")
     lines.append(f"[dim]Install[/] [white]{install}[/]")
     goal = p.get("goal_preview") or ""

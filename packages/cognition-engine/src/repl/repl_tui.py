@@ -38,10 +38,17 @@ from src.cli.setup_summary import (
     load_last_setup,
     load_project_setup_summary,
 )
+from src.repl.clipboard_util import copy_to_clipboard
 from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP
 from src.repl.session_bridge import SessionBridge
 from src.repl.tips import CE_TIPS
 from src.repl.trace_viz import trace_lane_markup
+
+
+class CopyableRichLog(RichLog):
+    """RichLog with terminal text selection enabled where supported."""
+
+    ALLOW_SELECT = True
 
 COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-model", "Change model", "primary"),
@@ -56,9 +63,8 @@ COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-quit", "Exit CE", "danger"),
 ]
 
-COMMAND_HINTS = """[dim]Chat:[/] center · trace panel right
-[dim]Copy:[/] drag-select text in chat/trace
-[dim]Git:[/] you commit in your shell — CE won't"""
+COMMAND_HINTS = """[dim]Copy:[/] Ctrl+Shift+C last reply
+[dim]Model:[/] dropdown updates key slot live"""
 
 _THINK_FRAMES = ("◐", "◓", "◑", "◒")
 _THINK_PHASES = (
@@ -287,6 +293,7 @@ class CognitionReplApp(App):
         Binding("ctrl+m", "pick_model", "Models", show=True),
         Binding("ctrl+s", "action_start", "Start", show=True),
         Binding("ctrl+e", "prompt_end", "End", show=True),
+        Binding("ctrl+shift+c", "copy_last_reply", "Copy", show=True),
         Binding("ctrl+l", "clear_log", "Clear", show=False),
         Binding("pageup", "scroll_up", "▲", show=False),
         Binding("pagedown", "scroll_down", "▼", show=False),
@@ -311,6 +318,10 @@ class CognitionReplApp(App):
             "total": 0,
             "last_turn": 0,
         }
+        self._last_assistant_plain = ""
+        self._typing_timer: Timer | None = None
+        self._typing_full = ""
+        self._typing_pos = 0
 
     def _build_agent(self):
         try:
@@ -412,13 +423,20 @@ class CognitionReplApp(App):
                 yield Static(self._top_bar_text(), id="top-bar", markup=True)
                 yield Static(self._token_bar_text(), id="token-bar", markup=True)
                 yield Static(self._tracker_text(), id="tracker-panel", markup=True)
+                yield Static("", id="chat-thinking", markup=True)
                 yield Static(
                     "[dim]Your message appears below when you send[/]",
                     id="prompt-display",
                     markup=True,
                 )
                 with VerticalScroll(id="chat-scroll", can_focus=True):
-                    yield RichLog(id="log", highlight=True, markup=True, wrap=True)
+                    yield CopyableRichLog(
+                        id="log",
+                        highlight=True,
+                        markup=True,
+                        wrap=True,
+                        auto_scroll=True,
+                    )
                 with Horizontal(id="composer"):
                     yield Static("❯", id="prompt-glyph")
                     yield Input(
@@ -429,9 +447,15 @@ class CognitionReplApp(App):
                 yield Static("AGENT TRACE", classes="rail-section-title")
                 yield Static("", id="thinking-bar", markup=True)
                 with VerticalScroll(id="activity-scroll", can_focus=True):
-                    yield RichLog(id="activity-log", highlight=False, markup=True, wrap=True)
+                    yield CopyableRichLog(
+                        id="activity-log",
+                        highlight=False,
+                        markup=True,
+                        wrap=True,
+                        auto_scroll=True,
+                    )
                 yield Static(
-                    "[dim]Drag to select · copy with terminal or Ctrl+Shift+C[/]",
+                    "[dim]Shift+drag select · Ctrl+Shift+C copies last reply[/]",
                     id="trace-hint",
                     markup=True,
                 )
@@ -442,6 +466,7 @@ class CognitionReplApp(App):
         return format_setup_summary_rich(
             load_last_setup(),
             load_project_setup_summary(self.bridge.root),
+            ctx=self.bridge.ctx,
         )
 
     def _tracker_text(self) -> str:
@@ -552,12 +577,12 @@ class CognitionReplApp(App):
             return
         self._active_model_id = mid
         msg = apply_model_choice(self.bridge.ctx, mid)
+        self._agent = self._build_agent()
         self._log(f"[green]✓[/] {msg}")
-        self.query_one("#top-bar", Static).update(self._top_bar_text())
-        self.query_one("#setup-panel", Static).update(self._setup_panel_text())
+        self._refresh_chrome(sync_select=False)
 
     def _log(self, text: str) -> None:
-        self.query_one(RichLog).write(text)
+        self.query_one("#log", RichLog).write(text)
         self._scroll_chat_end()
 
     def _scroll_chat_end(self) -> None:
@@ -577,12 +602,50 @@ class CognitionReplApp(App):
         )
 
     def _log_assistant(self, text: str) -> None:
+        self._last_assistant_plain = text
         body = text.replace("\n", "\n[#79c0ff]│ [/#79c0ff]")
         self._log(
             "\n[bold #79c0ff]┏━ Assistant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
             f"[#79c0ff]│ [/#79c0ff]{body}\n"
             "[bold #79c0ff]┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
         )
+
+    def _clear_chat_thinking(self) -> None:
+        try:
+            self.query_one("#chat-thinking", Static).update("")
+        except Exception:
+            pass
+
+    def _log_assistant_typing(self, text: str) -> None:
+        """Reveal assistant reply character-by-character (Claude Code–style)."""
+        self._last_assistant_plain = text
+        self._typing_full = text
+        self._typing_pos = 0
+        self._clear_chat_thinking()
+        if self._typing_timer is not None:
+            self._typing_timer.stop()
+        self._typing_timer = self.set_interval(0.018, self._typing_tick)
+
+    def _typing_tick(self) -> None:
+        if self._typing_pos >= len(self._typing_full):
+            if self._typing_timer is not None:
+                self._typing_timer.stop()
+                self._typing_timer = None
+            self._clear_chat_thinking()
+            self._log_assistant(self._typing_full)
+            return
+        step = max(2, len(self._typing_full) // 120)
+        end = min(self._typing_pos + step, len(self._typing_full))
+        self._typing_pos = end
+        partial = self._typing_full[:end]
+        display = partial.replace("\n", " ")
+        if len(display) > 400:
+            display = "…" + display[-400:]
+        self.query_one("#chat-thinking", Static).update(
+            f"[bold #79c0ff]▌ Assistant[/] [italic]typing…[/]\n"
+            f"[#79c0ff]{display}[/][bold #79c0ff]▌[/]"
+        )
+        self.query_one("#chat-scroll", VerticalScroll).scroll_end(animate=False)
 
     def _log_system(self, text: str) -> None:
         self._log(f"[dim]· {text}[/]")
@@ -634,14 +697,21 @@ class CognitionReplApp(App):
             self._thinking_timer.stop()
         self._thinking_timer = self.set_interval(0.35, self._tick_thinking)
 
-    def _tick_thinking(self) -> None:
+    def _thinking_markup(self) -> str:
         frame = _THINK_FRAMES[self._thinking_tick % len(_THINK_FRAMES)]
         phase = _THINK_PHASES[(self._thinking_tick // 2) % len(_THINK_PHASES)]
         dots = _THINK_DOTS[self._thinking_tick % len(_THINK_DOTS)]
-        self._thinking_tick += 1
-        self.query_one("#thinking-bar", Static).update(
+        return (
             f"[bold #6cb6ff]{frame}[/] [italic]{phase}[/][dim]{dots}[/]  "
-            f"[dim]Esc cancel · tokens update live above[/]"
+            f"[dim]Esc cancel · Ctrl+Shift+C copy last reply[/]"
+        )
+
+    def _tick_thinking(self) -> None:
+        self._thinking_tick += 1
+        markup = self._thinking_markup()
+        self.query_one("#thinking-bar", Static).update(markup)
+        self.query_one("#chat-thinking", Static).update(
+            f"[bold #6cb6ff]◆ Thinking[/]  {markup}"
         )
 
     def _stop_thinking(self) -> None:
@@ -649,6 +719,8 @@ class CognitionReplApp(App):
             self._thinking_timer.stop()
             self._thinking_timer = None
         self.query_one("#thinking-bar", Static).update("")
+        if not self._typing_timer:
+            self._clear_chat_thinking()
 
     def _chat_sync(self, line: str) -> ChatJobResult:
         if not self._agent:
@@ -677,12 +749,21 @@ class CognitionReplApp(App):
             name="chat",
         )
 
+    def _migrate_and_reload_keys(self) -> None:
+        from src.cli.hermes_setup import _load_global, _persist_migrated_keys
+
+        data = _load_global()
+        if data:
+            _persist_migrated_keys(data)
+            self.bridge.ctx.config.reload()
+
     def on_mount(self) -> None:
+        self._migrate_and_reload_keys()
         self._try_bind_last_project()
         self._active_model_id = str(self.bridge.ctx.config.get("default_model", ""))
         self._sync_model_select()
         self._tips_timer = self.set_interval(12.0, self._tick_tip)
-        log = self.query_one(RichLog)
+        log = self.query_one("#log", RichLog)
         log.write("[bold #6cb6ff]Cognition Engine[/] ready")
         log.write(
             "[dim]Left panel:[/] [bold]Setup keys[/] · model dropdown · [bold]Change model[/] to search"
@@ -725,6 +806,7 @@ class CognitionReplApp(App):
 
         if saved:
             os.environ["CE_SETUP_DONE"] = "1"
+            self._migrate_and_reload_keys()
             self._active_model_id = str(self.bridge.ctx.config.get("default_model", ""))
             self._agent = self._build_agent()
             self._refresh_chrome(sync_select=True)
@@ -816,9 +898,9 @@ class CognitionReplApp(App):
             return
         result: ChatJobResult = event.worker.result
         if result.kind == "ok":
-            self._log_assistant(result.payload)
+            self._log_assistant_typing(result.payload)
         elif result.kind == "error":
-            self._log_assistant(f"[red]{result.payload}[/]")
+            self._log_assistant_typing(f"[red]{result.payload}[/]")
         elif result.kind == "no_agent":
             self._log_system(
                 "Chat needs an API key. Click [bold]Setup keys[/] or type /keys"
@@ -897,8 +979,16 @@ class CognitionReplApp(App):
         finally:
             self._select_syncing = False
 
+    def action_copy_last_reply(self) -> None:
+        text = self._last_assistant_plain.strip()
+        if not text:
+            self._log_system("No assistant reply to copy yet.")
+            return
+        ok, msg = copy_to_clipboard(text)
+        self._log_system(f"{'[green]✓[/] ' if ok else '[yellow]'} {msg}")
+
     def action_clear_log(self) -> None:
-        self.query_one(RichLog).clear()
+        self.query_one("#log", RichLog).clear()
 
     def action_scroll_up(self) -> None:
         self.query_one("#chat-scroll", VerticalScroll).scroll_up(animate=False)
@@ -933,6 +1023,21 @@ class CognitionReplApp(App):
                 return
             if cmd == "/shield":
                 self._log(self.bridge.cmd_shield())
+                return
+            if cmd == "/keys":
+                from src.cli.api_key_providers import format_keys_report
+
+                model_id = str(self.bridge.ctx.config.get("default_model", ""))
+                self._log_user(line)
+                self._log(
+                    format_keys_report(
+                        self.bridge.ctx.config, model_id, markup=True
+                    )
+                )
+                self._refresh_chrome(sync_select=False)
+                return
+            if cmd == "/copy":
+                self.action_copy_last_reply()
                 return
             self._log_user(line)
             result = self.bridge.dispatch(line)

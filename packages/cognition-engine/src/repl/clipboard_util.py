@@ -1,0 +1,45 @@
+"""Copy text to system clipboard (Linux/macOS/Windows)."""
+
+from __future__ import annotations
+
+import platform
+import shutil
+import subprocess
+
+
+def copy_to_clipboard(text: str) -> tuple[bool, str]:
+    if not text.strip():
+        return False, "Nothing to copy."
+    system = platform.system()
+    try:
+        if system == "Windows":
+            subprocess.run(
+                ["clip"],
+                input=text.encode("utf-16le"),
+                check=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            return True, "Copied to clipboard."
+        if system == "Darwin":
+            subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
+            return True, "Copied to clipboard."
+        if shutil.which("wl-copy"):
+            subprocess.run(["wl-copy"], input=text.encode("utf-8"), check=True)
+            return True, "Copied to clipboard."
+        if shutil.which("xclip"):
+            subprocess.run(
+                ["xclip", "-selection", "clipboard"],
+                input=text.encode("utf-8"),
+                check=True,
+            )
+            return True, "Copied to clipboard."
+        if shutil.which("xsel"):
+            subprocess.run(
+                ["xsel", "--clipboard", "--input"],
+                input=text.encode("utf-8"),
+                check=True,
+            )
+            return True, "Copied to clipboard."
+    except (OSError, subprocess.CalledProcessError) as exc:
+        return False, f"Clipboard failed: {exc}"
+    return False, "Install xclip or wl-copy (sudo apt install xclip)."

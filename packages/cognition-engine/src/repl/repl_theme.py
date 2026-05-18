@@ -5,8 +5,7 @@ CE_BRAND_MARKUP = """[bold #58a6ff]╭──────────────
 [bold #58a6ff]│[/] [bold white on #0d1520]  █▀█ ██▄ █ ▀█ █▄▄ █▀█[/] [bold #58a6ff]│[/]
 [bold #58a6ff]│[/] [bold #6cb6ff]  COGNITION ENGINE[/]        [bold #58a6ff]│[/]
 [bold #58a6ff]│[/] [dim]  agent console · v3[/]          [bold #58a6ff]│[/]
-[bold #58a6ff]╰──────────────────────────╯[/]
-[bold #e6edf3]     By Apar Baral[/]"""
+[bold #58a6ff]╰──────────────────────────╯[/]"""
 
 CE_APP_CSS = """
 Screen {
@@ -193,6 +192,21 @@ Footer {
     border-bottom: solid #6cb6ff;
     color: #6cb6ff;
     text-style: bold;
+}
+
+#chat-thinking {
+    height: auto;
+    min-height: 1;
+    max-height: 8;
+    background: #131a24;
+    border: solid #3d5a80;
+    padding: 0 2;
+    margin-bottom: 1;
+    color: #6cb6ff;
+}
+
+#chat-thinking:empty {
+    display: none;
 }
 
 #tracker-panel {

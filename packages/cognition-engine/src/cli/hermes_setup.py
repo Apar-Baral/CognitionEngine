@@ -16,6 +16,7 @@ from src.cli.api_key_providers import (
     env_var_for_model,
     format_configured_keys,
     has_key_for_model,
+    migrate_keys_for_model,
     model_provider,
     provider_label_for_model,
 )
@@ -59,7 +60,22 @@ def _keys_from_env() -> dict[str, str]:
 def _merged_keys(data: dict[str, Any]) -> dict[str, str]:
     keys = dict(data.get("api_keys") or {})
     keys.update(_keys_from_env())
+    model = data.get("default_model")
+    if model:
+        keys = migrate_keys_for_model(keys, str(model))
     return {k: v for k, v in keys.items() if v}
+
+
+def _persist_migrated_keys(data: dict[str, Any]) -> None:
+    """Write migrated key buckets back to ~/.cognition/config.yaml."""
+    model = data.get("default_model")
+    if not model:
+        return
+    raw = dict(data.get("api_keys") or {})
+    migrated = migrate_keys_for_model(raw, str(model))
+    if migrated != raw:
+        data["api_keys"] = migrated
+        _save_global(data)
 
 
 def _provider_for_model(model_id: str) -> str:
@@ -131,11 +147,12 @@ def persist_setup_choices(
     data["default_model"] = mid
     git = data.setdefault("git", {})
     git.setdefault("auto_commit", True)
-    if not git.get("user_name"):
-        git["user_name"] = os.environ.get("CE_GIT_USER_NAME", "Apar-Baral")
-    if not git.get("user_email"):
-        git["user_email"] = os.environ.get("CE_GIT_USER_EMAIL", "dedsecaparb@gmail.com")
+    if not git.get("user_name") and os.environ.get("CE_GIT_USER_NAME"):
+        git["user_name"] = os.environ["CE_GIT_USER_NAME"]
+    if not git.get("user_email") and os.environ.get("CE_GIT_USER_EMAIL"):
+        git["user_email"] = os.environ["CE_GIT_USER_EMAIL"]
     _save_global(data)
+    _persist_migrated_keys(data)
 
     root = (project_root or Path.cwd()).resolve()
     ctx = ProjectContext(root)
@@ -244,6 +261,7 @@ def hermes_quick_setup(
 
     data["api_keys"] = {**dict(data.get("api_keys") or {}), **keys}
     _save_global(data)
+    _persist_migrated_keys(data)
 
     ctx = ProjectContext(root)
     if init_project and not ctx.is_initialized():

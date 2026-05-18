@@ -92,10 +92,15 @@ class Config:
             for key, val in (raw.get("api_keys") or {}).items():
                 if isinstance(val, str) and val:
                     self._api_keys[key] = val
-        for provider in ("anthropic", "openai", "google", "deepseek"):
+        for provider in ("anthropic", "openai", "google", "deepseek", "openrouter"):
             env_key = f"{provider.upper()}_API_KEY"
             if os.environ.get(env_key):
                 self._api_keys[provider] = os.environ[env_key]
+        model = self._data.get("default_model")
+        if model:
+            from src.cli.api_key_providers import migrate_keys_for_model
+
+            self._api_keys = migrate_keys_for_model(self._api_keys, str(model))
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get nested key using dot notation, e.g. proxy.port."""
