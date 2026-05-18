@@ -227,24 +227,51 @@ fi
 ensure_venv
 pip_install_package
 
+install_path_hooks() {
+  local marker="# cognition-engine-path"
+  local path_line="export PATH=\"$VENV/bin:\$HOME/.local/bin:\$PATH\""
+  for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+    [ -f "$rc" ] || touch "$rc"
+    if ! grep -qF "$marker" "$rc" 2>/dev/null; then
+      {
+        echo ""
+        echo "$marker"
+        echo "$path_line"
+      } >> "$rc"
+      echo "==> Updated $(basename "$rc")"
+    fi
+  done
+}
+
+install_local_wrapper() {
+  mkdir -p "$HOME/.local/bin"
+  local wrap="$HOME/.local/bin/cognition-engine"
+  cat >"$wrap" <<WRAP
+#!/bin/sh
+# Cognition Engine launcher (always uses CE venv)
+exec "$VENV/bin/cognition-engine" "\$@"
+WRAP
+  chmod +x "$wrap"
+  echo "==> Launcher: $wrap"
+}
+
 echo ""
 echo "=== Installed ==="
-INSTALLED="$("$VENV/bin/cognition-engine" --version 2>/dev/null || echo unknown)"
-echo "cognition-engine $INSTALLED"
+"$VENV/bin/cognition-engine" --version 2>/dev/null || echo "unknown"
 "$VENV/bin/cognition-engine" doctor || true
 
-PATH_LINE="export PATH=\"$VENV/bin:\$PATH\""
-if [ -f "$HOME/.bashrc" ] && ! grep -qF 'cognition-engine/.venv/bin' "$HOME/.bashrc" 2>/dev/null; then
-  {
-    echo ""
-    echo "# Cognition Engine (no manual venv activate needed)"
-    echo "$PATH_LINE"
-  } >> "$HOME/.bashrc"
-  echo "==> Added CE to ~/.bashrc — run: source ~/.bashrc  (or open a new terminal)"
-else
-  echo "==> PATH tip (if command not found): $PATH_LINE"
-fi
+install_local_wrapper
+install_path_hooks
+
 echo ""
-echo "You do NOT need: source $VENV/bin/activate"
-echo "Just run: cognition-engine"
+echo "=== How to run (no venv activate) ==="
+echo "  cognition-engine"
+echo ""
+echo "Kali default shell is zsh. After install, run ONE of:"
+echo "  source ~/.zshrc"
+echo "  exec zsh"
+echo "Do NOT run: source ~/.bashrc   (that breaks zsh — shopt/complete errors)"
+echo ""
+echo "Or use full path anytime:"
+echo "  $VENV/bin/cognition-engine"
 echo ""

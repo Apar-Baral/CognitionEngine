@@ -460,7 +460,7 @@ def cmd_doctor() -> None:
 
     pkg_root = Path(src.__file__).resolve().parent
     checks: list[tuple[str, bool]] = [
-        ("Package version >= 0.3.9", __version__ >= "0.3.9"),
+        ("Package version >= 0.3.10", __version__ >= "0.3.10"),
         ("session_tokens.py present", (pkg_root / "memory" / "session_tokens.py").is_file()),
         (
             "Token dict normalization works",
@@ -490,9 +490,13 @@ def cmd_doctor() -> None:
     formatters.print_info(f"Package path: {pkg_root}")
     env = runtime_env_status()
     if env.get("ce_venv_active"):
-        formatters.print_success(f"CE runtime OK (no manual activate needed): {env['ce_venv_python']}")
+        formatters.print_success(
+            f"CE runtime OK (venv: {env.get('ce_venv_dir') or env.get('ce_venv_python')})"
+        )
     elif env.get("ce_venv_found"):
-        formatters.print_info(f"CE venv: {env['ce_venv_python']} (auto-used when you run cognition-engine)")
+        formatters.print_info(
+            f"CE venv: {env.get('ce_venv_dir')} — auto-used when you run cognition-engine"
+        )
     elif env["venv_active"]:
         formatters.print_warning("Another venv is active; CE will switch to its own venv automatically")
     else:
