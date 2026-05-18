@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +63,9 @@ class SessionBridge:
   /commit MSG        Git commit now
   /setup             Run project setup wizard
   /project PATH      Switch to project directory
+  /memory            DNA + sessions + insights summary
+  /rl                Reinforcement learning (Q-table) status
+  /keys              Which API keys are configured
   /chat TEXT         Send message to agent (requires API key)
   /exit              Quit"""
 
@@ -133,7 +137,7 @@ class SessionBridge:
             return "Usage: /end What you completed this session"
         state = self.ctx.load_session_state()
         if not state:
-            return "No active session."
+            return "No active session. Run /start first."
         op = self.ctx.active_operational_memory()
         op.set_completion_notes(summary)
         sess = op.get_session_summary()
@@ -141,14 +145,87 @@ class SessionBridge:
         pid = phase.get("id", "PHASE_01") if phase else "PHASE_01"
         op.flush_to_dna(self.ctx.mutator, self.ctx.query, pid)
         self.ctx.session_store().close_session(int(state["session_id"]), sess)
-        self.ctx.knowledge_synthesizer().synthesize(sess)
+        new_insights = self.ctx.knowledge_synthesizer().synthesize(sess)
+        rl = self.ctx.rl_allocator()
+        alloc = rl.get_recommended_allocation(state.get("session_type", "BUILD"))
+        rl.record_session_result(
+            state.get("session_type", "BUILD"),
+            "MEDIUM",
+            alloc,
+            float(sess.get("efficiency_score", 50)),
+            outcome=sess,
+        )
+        try:
+            from src.memory.vector_store import VectorMemoryStore
+
+            VectorMemoryStore(self.root, self.ctx.project_name()).index_session_summary(sess)
+        except Exception:
+            pass
         self.ctx.clear_session_state()
         self._session_active = False
-        lines = [f"Session ended: {summary[:80]}"]
+        lines = [
+            f"Session ended: {summary[:80]}",
+            f"Tokens: {sess.get('tokens', {}).get('total', 0)} | RL updated (Q-learning)",
+        ]
+        if new_insights:
+            lines.append(f"New insights: {len(new_insights)}")
         if should_auto_commit(self.ctx.config):
             msg = auto_commit(self.root, summary, prefix=auto_commit_prefix(self.ctx.config))
             if msg:
                 lines.append(msg)
+        return "\n".join(lines)
+
+    def cmd_memory(self) -> str:
+        err = self.ensure_initialized()
+        if err:
+            return err
+        dna = self.ctx.query.refresh()
+        proj = dna.get("project", {})
+        sessions = len(dna.get("sessions_index", []))
+        insights = len(dna.get("insights", []))
+        pending = len(self.ctx.query.get_unapplied_insights())
+        hall = proj.get("total_hallucinations_caught", 0)
+        tokens = proj.get("total_tokens_consumed", 0)
+        return (
+            f"Memory (DNA at {self.ctx.cognition_dir / 'dna.json'}):\n"
+            f"  Sessions indexed: {sessions}\n"
+            f"  Insights: {insights} ({pending} pending)\n"
+            f"  Tokens tracked: {tokens}\n"
+            f"  Hallucinations caught: {hall}\n"
+            f"  Vector memory: optional (cognition-engine index)"
+        )
+
+    def cmd_rl(self) -> str:
+        err = self.ensure_initialized()
+        if err:
+            return err
+        rl = self.ctx.rl_allocator()
+        stats = rl.get_learning_stats()
+        dna = self.ctx.query.refresh().get("rl_state", {})
+        return (
+            "Reinforcement learning (token allocation Q-learning):\n"
+            f"  States in Q-table: {stats.get('states_explored', 0)}\n"
+            f"  Sessions learned: {stats.get('sessions_learned', 0)}\n"
+            f"  Exploration ε: {stats.get('epsilon', dna.get('exploration_rate', '?'))}\n"
+            f"  DNA sessions trained: {dna.get('total_sessions_trained', 0)}\n"
+            f"  Updates on each /end — optimizes explore/implement/verify split"
+        )
+
+    def cmd_keys(self) -> str:
+        lines = ["API keys configured:"]
+        any_key = False
+        for p in ("anthropic", "openai", "google", "deepseek", "openrouter"):
+            if self.ctx.config.get_api_key(p):
+                lines.append(f"  ✓ {p}")
+                any_key = True
+            else:
+                lines.append(f"  · {p} (missing)")
+        model_id = str(self.ctx.config.get("default_model", "?"))
+        meta = self.ctx.model_registry().get_model(model_id) or {}
+        prov = meta.get("provider", "?")
+        lines.append(f"Active model: {model_id} → provider {prov}")
+        if not any_key:
+            lines.append("Run: cognition-engine setup --project .")
         return "\n".join(lines)
 
     def cmd_status(self) -> str:
@@ -193,17 +270,11 @@ class SessionBridge:
         )
 
     def cmd_setup(self) -> str:
-        from src.cli.setup_summary import load_last_setup
-        from src.cli.setup_wizard import run_full_setup
+        from src.cli.interactive_setup import run_quick_setup_in_terminal
 
-        target = self.root
-        if not self.ctx.is_initialized():
-            last = load_last_setup().get("project_path")
-            if last:
-                target = Path(str(last)).expanduser().resolve()
-        run_full_setup(target, interactive=True)
-        self.use_project(target)
-        return "Setup complete — see sidebar for your choices."
+        run_quick_setup_in_terminal(self.root)
+        self.use_project(self.root)
+        return "Setup complete."
 
     def dispatch(self, line: str) -> str:
         line = line.strip()
@@ -229,6 +300,9 @@ class SessionBridge:
             "/setup": lambda: self.cmd_setup(),
             "/project": lambda: self.cmd_project(arg),
             "/cd": lambda: self.cmd_project(arg),
+            "/memory": lambda: self.cmd_memory(),
+            "/rl": lambda: self.cmd_rl(),
+            "/keys": lambda: self.cmd_keys(),
             "/chat": lambda: f"Use natural language (no /chat prefix). {arg}".strip(),
             "/bootstrap": lambda: self.get_bootstrap_text(),
             "/exit": lambda: "__EXIT__",
@@ -236,5 +310,8 @@ class SessionBridge:
         }
         fn = handlers.get(cmd)
         if fn is None:
+            guess = difflib.get_close_matches(cmd, handlers.keys(), n=1)
+            if guess:
+                return f"Unknown command {cmd}. Did you mean {guess[0]}?"
             return f"Unknown command {cmd}. Try /help"
         return fn()

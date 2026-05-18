@@ -1,8 +1,10 @@
-"""Simple interactive REPL (stdin/stdout) — works without full TUI."""
+"""Interactive REPL — Textual TUI with rich fallback."""
 
 from __future__ import annotations
 
+import os
 import sys
+import traceback
 from pathlib import Path
 
 from rich.console import Console
@@ -10,35 +12,41 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 
 from src.cli.context import resolve_project_root
+from src.cli.interactive_setup import ensure_interactive_ready
 from src.repl.repl_commands import is_chat_message, is_slash_command
 from src.repl.session_bridge import SessionBridge
 
 
 def run_repl(project_root: Path | None = None) -> None:
-    """Run interactive Cognition Engine REPL."""
-    root = project_root or resolve_project_root()
-    bridge = SessionBridge(root)
+    """Rich stdin REPL — full commands, memory/RL, in-terminal setup."""
+    root = resolve_project_root(project_root)
+    ctx = ensure_interactive_ready(root, interactive=True)
+    bridge = SessionBridge(ctx.root)
     console = Console()
 
+    model = bridge.ctx.config.get("default_model", "?")
     console.print(
         Panel(
-            "[bold]Cognition Engine[/bold] — interactive mode\n"
-            "Type /help for commands, or chat after /start.\n"
-            "Tip: cognition-engine setup --project .  for first-time init",
-            title="CE Chat",
+            "[bold]Cognition Engine[/bold] — agent console\n"
+            f"Project: {bridge.root} | Model: {model}\n"
+            "[dim]Memory:[/] DNA + sessions + insights · [dim]RL:[/] Q-learning on /end\n"
+            "Commands: /help /start /end /memory /rl /keys /model /plan /status\n"
+            "Setup in-terminal: /setup",
+            title="CE",
+            border_style="blue",
         )
     )
 
     if not bridge.ctx.is_initialized():
-        console.print("[yellow]No .cognition/ found. Run /setup or: cognition-engine setup --project .[/]")
+        console.print("[yellow]Project not initialized.[/] Run: /setup")
 
     agent = None
     try:
         from src.agent.orchestrator import AgentOrchestrator
 
         agent = AgentOrchestrator(bridge.ctx)
-    except Exception:
-        pass
+    except Exception as exc:
+        console.print(f"[dim]Chat disabled until API keys configured:[/] {exc}")
 
     while True:
         try:
@@ -56,37 +64,58 @@ def run_repl(project_root: Path | None = None) -> None:
             if result == "__EXIT__":
                 break
             if result:
-                if line in ("/bootstrap",) or result.startswith("╔"):
+                if line.split()[0].lower() in ("/bootstrap",):
                     console.print(result)
                 else:
                     console.print(Panel(result, border_style="green"))
+            if line.split()[0].lower() in ("/setup", "/project", "/cd"):
+                try:
+                    from src.agent.orchestrator import AgentOrchestrator
+
+                    agent = AgentOrchestrator(bridge.ctx)
+                except Exception as exc:
+                    console.print(f"[yellow]{exc}[/]")
             continue
 
         if is_chat_message(line):
             if agent is None:
-                console.print(
-                    "[yellow]Agent unavailable (API keys?). Use slash commands or configure ~/.cognition/config.yaml[/]"
-                )
-                continue
+                try:
+                    from src.agent.orchestrator import AgentOrchestrator
+
+                    agent = AgentOrchestrator(bridge.ctx)
+                except Exception as exc:
+                    console.print(f"[red]{exc}[/]")
+                    console.print("[dim]Fix:[/] /keys  or  /setup")
+                    continue
             console.print("[dim]Thinking…[/]")
             try:
                 reply = agent.chat(line)
                 console.print(Panel(Markdown(reply), title="Assistant", border_style="blue"))
             except Exception as exc:
                 console.print(f"[red]Error: {exc}[/]")
+                console.print("[dim]Check:[/] /keys — model provider must match your API key")
             continue
 
         console.print("[dim]Unknown input. Try /help[/]")
 
 
 def run_repl_textual(project_root: Path | None = None) -> None:
-    """Try Textual TUI; fall back to simple REPL."""
+    """Textual TUI; falls back to rich REPL with error shown once."""
+    if os.environ.get("CE_SIMPLE_REPL") == "1":
+        run_repl(project_root)
+        return
     try:
         from src.repl.repl_tui import CognitionReplApp
 
+        ensure_interactive_ready(project_root, interactive=True)
         app = CognitionReplApp(project_root)
         app.run()
-    except Exception:
+    except Exception as exc:
+        console = Console(stderr=True)
+        console.print(f"[yellow]Graphical UI unavailable ({exc}).[/]")
+        if os.environ.get("CE_REPL_DEBUG"):
+            traceback.print_exc()
+        console.print("[dim]Using terminal chat mode (same commands). Set CE_SIMPLE_REPL=1 to skip TUI.[/]\n")
         run_repl(project_root)
 
 

@@ -36,19 +36,45 @@ class AgentOrchestrator:
         self.parser = ResponseParser()
         self._history: list[dict[str, str]] = []
 
+    @staticmethod
+    def resolve_api_key(config: Any, provider: str) -> str | None:
+        """Map model provider to configured API key."""
+        key = config.get_api_key(provider)
+        if key:
+            return key
+        if provider == "openai_compatible":
+            for alt in ("deepseek", "openai"):
+                key = config.get_api_key(alt)
+                if key:
+                    return key
+        if provider == "openrouter":
+            for alt in ("openrouter", "openai"):
+                key = config.get_api_key(alt)
+                if key:
+                    return key
+        if provider == "google":
+            key = config.get_api_key("google")
+            if key:
+                return key
+        for alt in ("anthropic", "openai", "deepseek", "google"):
+            key = config.get_api_key(alt)
+            if key:
+                return key
+        return None
+
     def _resolve_model(self) -> tuple[dict[str, Any], str]:
         model_id = str(self.ctx.config.get("default_model", "gpt-4o-mini"))
         reg = self.ctx.model_registry()
         model = reg.get_model(model_id)
         if not model:
             model = reg.get_default_model() or {}
-            model_id = model.get("id", model_id)
-        provider = model.get("provider", "openai")
-        key = self.ctx.config.get_api_key(provider) or self.ctx.config.get_api_key("openai")
+            model_id = str(model.get("id", model_id))
+        provider = str(model.get("provider", "openai"))
+        key = self.resolve_api_key(self.ctx.config, provider)
         if not key:
             raise RuntimeError(
-                f"No API key for provider '{provider}'. "
-                "Run cognition-engine setup or set keys in ~/.cognition/config.yaml"
+                f"No API key for provider '{provider}' (model: {model_id}). "
+                "Run: cognition-engine setup --project .  or add keys to ~/.cognition/config.yaml"
             )
         return model, key
 

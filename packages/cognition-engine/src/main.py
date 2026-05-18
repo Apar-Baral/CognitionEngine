@@ -30,8 +30,10 @@ def main() -> None:
 
     # No subcommand → interactive REPL (Hermes-style default)
     if len(sys.argv) == 1:
+        from src.cli.interactive_setup import ensure_interactive_ready
         from src.repl.repl_app import run_repl_textual
 
+        ensure_interactive_ready(interactive=True)
         run_repl_textual()
         return
     try:

@@ -246,10 +246,20 @@ def setup_project(
         gh_status = prompt_github_push(root, interactive=interactive)
     summary["github_push"] = gh_status
 
-    model_id = str(ctx.config.get("default_model", ""))
+    g_model = _load_global().get("default_model") or global_config_template()["default_model"]
+    model_id = str(g_model)
+    ctx.config.update("default_model", model_id, persist=True)
     summary["default_model"] = model_id
     save_project_setup_summary(root, summary)
     return ctx, summary
+
+
+def _load_global() -> dict[str, Any]:
+    path = Path(GLOBAL_CONFIG_PATH).expanduser()
+    if not path.is_file():
+        return {}
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return raw if isinstance(raw, dict) else {}
 
 
 def _write_goal_file(root: Path, goal: str) -> None:

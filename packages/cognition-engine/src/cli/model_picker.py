@@ -92,13 +92,24 @@ def select_options_for_widget(
 
 
 def apply_model_choice(ctx: Any, model_id: str) -> str:
-    """Persist model and return user-facing confirmation."""
+    """Persist model to project + global config."""
+    from pathlib import Path
+
     from src.cli.setup_summary import load_last_setup, save_last_setup, save_project_setup_summary
+    from src.core.constants import GLOBAL_CONFIG_PATH
 
     reg = ctx.model_registry()
     if model_id not in reg.list_models():
         return f"Unknown model: {model_id}"
     ctx.config.update("default_model", model_id, persist=True)
+    gpath = Path(GLOBAL_CONFIG_PATH).expanduser()
+    if gpath.is_file():
+        import yaml
+
+        data = yaml.safe_load(gpath.read_text(encoding="utf-8")) or {}
+        data["default_model"] = model_id
+        gpath.write_text(yaml.safe_dump(data, default_flow_style=False), encoding="utf-8")
+        ctx.config.reload()
     meta = reg.get_model(model_id) or {}
     label = meta.get("display_name") or model_id
     tier = meta.get("tier", "")
