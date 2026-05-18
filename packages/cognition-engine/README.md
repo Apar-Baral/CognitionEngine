@@ -61,7 +61,8 @@ cognition-engine setup --project .
 ```
 
 - **No env hassle:** CE auto-runs inside `~/CognitionEngine/.../.venv` when installed via `install-ce.sh` (no Kali system-pip errors).
-- **Model picker:** `Ctrl+M` or `/model` in the REPL; numbered list during `setup`.
+- **Model picker:** dropdown in the left panel (one click) or `Ctrl+M` search with 1–9 quick keys.
+- **No /help needed:** action buttons (Start, Plan, Status, End, Commit) always visible.
 - **GitHub:** setup asks once to push your project (`gh repo create` or remote URL).
 - **Setup sidebar:** REPL shows model, git, GitHub, and goal from your last setup.
 

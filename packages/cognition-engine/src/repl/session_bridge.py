@@ -68,26 +68,10 @@ class SessionBridge:
 
     def cmd_model(self, model_id: str) -> str:
         if not model_id.strip():
-            return "Model picker: press [bold]Ctrl+M[/] or type /model <id>"
-        mid = model_id.strip()
-        reg = self.ctx.model_registry()
-        if mid not in reg.list_models():
-            known = ", ".join(reg.list_models()[:6])
-            return f"Unknown model '{mid}'. Try /models or Ctrl+M. Known: {known}…"
-        self.ctx.config.update("default_model", mid, persist=True)
-        meta = reg.get_model(mid) or {}
-        label = meta.get("display_name") or mid
-        tier = meta.get("tier", "")
-        from src.cli.setup_summary import load_last_setup, save_last_setup, save_project_setup_summary
+            return "Use the model dropdown (left) or Ctrl+M to search."
+        from src.cli.model_picker import apply_model_choice
 
-        g = load_last_setup()
-        g["default_model"] = mid
-        save_last_setup(g)
-        if self.ctx.is_initialized():
-            ps = {"default_model": mid}
-            save_project_setup_summary(self.root, ps)
-        tier_note = f" [{tier}]" if tier else ""
-        return f"Model updated to {mid} ({label}){tier_note} — saved to .cognition/config.yaml"
+        return apply_model_choice(self.ctx, model_id.strip())
 
     def cmd_goal(self, text: str) -> str:
         if not text.strip():
