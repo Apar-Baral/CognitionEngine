@@ -52,6 +52,25 @@ On first run, `~/.cognition/models.yaml` is copied from `config/default_models.y
 
 ---
 
+## Hermes-style interactive mode (v0.3+)
+
+```bash
+cognition-engine              # launches chat REPL (Textual TUI)
+cognition-engine chat         # same
+cognition-engine setup --project .
+```
+
+REPL slash commands: `/help`, `/model ID`, `/plan`, `/start`, `/end summary`, `/status`, `/commit msg`.
+
+Optional slim install (no PyTorch):
+
+```bash
+pip install -e .
+pip install -e ".[semantic]"   # Chroma + embeddings
+```
+
+Copy `config/profile.example.yaml` to `~/.cognition/profile.yaml` for defaults (model, auto_commit).
+
 ## Usage on your project
 
 ### Initialize

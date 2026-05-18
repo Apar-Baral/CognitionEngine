@@ -26,7 +26,7 @@ def test_cc_help_and_version():
     assert "start" in r.stdout
     r2 = _invoke(["--version"])
     assert r2.exit_code == 0
-    assert "0.1." in r2.stdout
+    assert "0.3." in r2.stdout
 
 
 def test_init_status_plan_preview(tmp_path: Path):

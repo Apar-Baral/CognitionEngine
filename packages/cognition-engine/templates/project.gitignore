@@ -1,0 +1,24 @@
+# Cognition Engine — runtime (do not commit)
+.cognition/sessions/
+.cognition/backups/
+.cognition/metrics.db
+.cognition/chroma/
+.cognition/truth_chroma/
+.cognition/memory_chroma/
+.cognition/active_session.json
+.cognition/precompile_cache.json
+data/
+
+# Keep project CE settings trackable (optional)
+!.cognition/config.yaml
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.env
+.env.*

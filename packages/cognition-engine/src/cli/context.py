@@ -249,7 +249,11 @@ class ProjectContext:
                 yaml.safe_dump(
                     {
                         "shield_sensitivity": "medium",
-                        "default_model": "claude-sonnet",
+                        "default_model": "claude-sonnet-4-20250514",
+                        "git": {
+                            "auto_commit": False,
+                            "auto_commit_message_prefix": "ce:",
+                        },
                     }
                 ),
                 encoding="utf-8",

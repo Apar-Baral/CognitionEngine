@@ -1,3 +1,3 @@
 """Cognition Engine — AI development orchestrator package."""
 
-__version__ = "0.1.2"
+__version__ = "0.3.0"

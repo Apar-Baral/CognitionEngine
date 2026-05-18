@@ -1,0 +1,8 @@
+# Copy to ~/.cognition/profile.yaml
+default_model: gpt-4o-mini
+shield_sensitivity: medium
+git:
+  auto_commit: true
+  auto_commit_message_prefix: "ce:"
+repl:
+  use_textual: true

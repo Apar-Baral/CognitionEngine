@@ -87,6 +87,41 @@ def main(
         logging.basicConfig(level=logging.DEBUG)
 
 
+@app.command("setup")
+def cmd_setup(
+    project_path: Optional[Path] = typer.Option(
+        None, "--project", "-p", help="Also initialize this project directory"
+    ),
+    non_interactive: bool = typer.Option(
+        False, "--yes", "-y", help="Skip API key prompts"
+    ),
+) -> None:
+    """First-time setup: global config, models registry, optional project init."""
+    try:
+        from src.cli.setup_wizard import run_full_setup
+
+        run_full_setup(project_path, interactive=not non_interactive)
+    except Exception as e:
+        _handle_error(e)
+
+
+@app.command("git-init")
+def cmd_git_init(
+    project_path: Optional[Path] = typer.Argument(None, help="Project directory"),
+    no_commit: bool = typer.Option(False, "--no-commit", help="Skip initial commit"),
+) -> None:
+    """Initialize git with CE-friendly .gitignore."""
+    try:
+        from src.cli.git_helpers import git_init_project, write_project_gitignore
+
+        root = (project_path or _ctx().root).resolve()
+        write_project_gitignore(root)
+        for msg in git_init_project(root, initial_commit=not no_commit):
+            formatters.print_success(msg)
+    except Exception as e:
+        _handle_error(e)
+
+
 @app.command("init")
 def cmd_init(
     project_path: Optional[Path] = typer.Argument(None, help="Project directory"),
@@ -151,6 +186,7 @@ def cmd_plan(
     goal: Optional[str] = typer.Option(None, "--goal", "-g", help="Project goal description"),
     phases: int = typer.Option(24, "--phases", help="Target number of phases"),
     force: bool = typer.Option(False, "--force", help="Regenerate existing plan"),
+    use_llm: bool = typer.Option(False, "--llm", help="Use LLM to tailor phase descriptions"),
 ) -> None:
     """Generate or regenerate the master project plan."""
     try:
@@ -175,6 +211,8 @@ def cmd_plan(
 
         scan = ctx.scan()
         phase_list = generate_goal_plan(goal, num_phases=phases, language=scan["language"])
+        if use_llm:
+            phase_list = _llm_enrich_plan(ctx, phase_list, goal)
         formatters.print_renderable(
             formatters.format_phase_progress_map(
                 phase_list,
@@ -258,6 +296,7 @@ def cmd_start(
 def cmd_end(
     summary: str = typer.Option("", "--summary", "-s", help="Session summary"),
     tokens: int = typer.Option(0, "--tokens", help="Tokens consumed"),
+    no_commit: bool = typer.Option(False, "--no-commit", help="Skip auto git commit"),
 ) -> None:
     """End the current session and generate reports."""
     try:
@@ -284,6 +323,13 @@ def cmd_end(
         predictor.calibrate("BUILD", phase_id, sess_summary["tokens"]["total"], session_id=int(state["session_id"]))
 
         formatters.print_renderable(formatters.format_session_summary(sess_summary))
+
+        try:
+            from src.memory.vector_store import VectorMemoryStore
+
+            VectorMemoryStore(ctx.root, ctx.project_name()).index_session_summary(sess_summary)
+        except Exception:
+            pass
 
         new_insights = ctx.knowledge_synthesizer().synthesize(sess_summary)
         rl = ctx.rl_allocator()
@@ -316,8 +362,20 @@ def cmd_end(
         formatters.print_info(f"Next: {rec_engine.get_next_session_prompt()}")
 
         ctx.clear_session_state()
+        if summary and not no_commit:
+            from src.cli.git_helpers import auto_commit, auto_commit_prefix, should_auto_commit
+
+            if should_auto_commit(ctx.config):
+                git_msg = auto_commit(
+                    ctx.root,
+                    summary,
+                    prefix=auto_commit_prefix(ctx.config),
+                )
+                if git_msg:
+                    formatters.print_info(git_msg)
+
         formatters.print_success(
-            "Session ended. Run `cognition-engine start` for your next session."
+            "Session ended. Run `cognition-engine chat` or `cognition-engine start` for next session."
         )
     except Exception as e:
         _handle_error(e)
@@ -331,7 +389,7 @@ def cmd_doctor() -> None:
 
     pkg_root = Path(src.__file__).resolve().parent
     checks: list[tuple[str, bool]] = [
-        ("Package version >= 0.1.2", __version__ >= "0.1.2"),
+        ("Package version >= 0.3.0", __version__ >= "0.3.0"),
         ("session_tokens.py present", (pkg_root / "memory" / "session_tokens.py").is_file()),
         (
             "Token dict normalization works",
@@ -553,6 +611,54 @@ def cmd_config(
         _handle_error(e)
 
 
+@app.command("chat")
+def cmd_chat(
+    project_path: Optional[Path] = typer.Option(None, "--project", "-p", help="Project root"),
+    simple: bool = typer.Option(False, "--simple", help="Use stdin REPL instead of Textual"),
+) -> None:
+    """Launch interactive chat REPL."""
+    try:
+        from src.repl.repl_app import run_repl, run_repl_textual
+
+        root = project_path or _state.get("project") or find_project_root()
+        if simple:
+            run_repl(Path(str(root)))
+        else:
+            run_repl_textual(Path(str(root)))
+    except Exception as e:
+        _handle_error(e)
+
+
+@app.command("index")
+def cmd_index(
+    memory: bool = typer.Option(True, "--memory/--no-memory", help="Index vector memory from DNA"),
+    graph: bool = typer.Option(True, "--graph/--no-graph", help="Rebuild architecture graph"),
+) -> None:
+    """Rebuild truth index, architecture graph, and vector memory."""
+    try:
+        ctx = _ctx()
+        ctx.require_initialized()
+        if graph:
+            from src.memory.graph_indexer import index_architecture_graph
+
+            index_architecture_graph(ctx.mutator, ctx.root)
+            formatters.print_success("Architecture graph updated.")
+        if memory:
+            from src.memory.vector_store import VectorMemoryStore
+
+            dna = ctx.query.refresh()
+            store = VectorMemoryStore(ctx.root, ctx.project_name())
+            store.index_tasks_from_dna(dna)
+            formatters.print_success("Vector memory indexed (tasks).")
+        from src.shield.truth_database import TruthDatabase
+
+        db = TruthDatabase(ctx.root)
+        db.index_codebase(progress_callback=lambda c, t, m: None)
+        formatters.print_success("Truth index rebuilt.")
+    except Exception as e:
+        _handle_error(e)
+
+
 @app.command("validate")
 def cmd_validate(
     file: Path = typer.Argument(..., help="File to validate"),
@@ -653,6 +759,15 @@ def _mask(key: str, value: object) -> str:
     if "key" in key.lower() or "secret" in key.lower():
         return "********"
     return str(value)
+
+
+def _llm_enrich_plan(
+    ctx: ProjectContext, phase_list: list[dict[str, Any]], goal: str
+) -> list[dict[str, Any]]:
+    from src.planner.llm_planner import enrich_phases_with_llm
+
+    formatters.print_info("Enriching plan with LLM…")
+    return enrich_phases_with_llm(ctx, phase_list, goal)
 
 
 def _apply_session_model(ctx: ProjectContext, model: Optional[str]) -> str:

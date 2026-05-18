@@ -34,6 +34,7 @@ SYSTEM_DEFAULTS: dict[str, Any] = {
     },
     "budgets": {st.value: budget for st, budget in DEFAULT_SESSION_BUDGETS.items()},
     "providers": {},
+    "git": {"auto_commit": False, "auto_commit_message_prefix": "ce:"},
 }
 
 ENV_PREFIX = "COGNITION_"
@@ -71,6 +72,9 @@ class Config:
             merged = _deep_merge(merged, project_data)
 
         merged = _deep_merge(merged, _env_overrides())
+        from src.core.profile import merge_profile_into_config
+
+        merged = merge_profile_into_config(merged)
         merged = _deep_merge(merged, self._cli_overrides)
         self._data = merged
         self._load_api_keys(global_path, project_config)

@@ -19,18 +19,22 @@ if [ ! -d .git ]; then
   git branch -M main
 fi
 
-if [ ! -f .gitignore ]; then
+TEMPLATE="$CE_ROOT/packages/cognition-engine/templates/project.gitignore"
+if [ -f "$TEMPLATE" ]; then
+  cp "$TEMPLATE" .gitignore
+elif [ ! -f .gitignore ]; then
   cat > .gitignore <<'EOF'
 .venv/
 __pycache__/
 *.pyc
 .cognition/sessions/
+.cognition/backups/
 .cognition/metrics.db
 .cognition/chroma/
 .cognition/truth_chroma/
-*.egg-info/
-dist/
-build/
+.cognition/memory_chroma/
+.cognition/active_session.json
+data/
 .env
 EOF
 fi

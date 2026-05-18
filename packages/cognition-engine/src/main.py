@@ -24,6 +24,12 @@ if hasattr(signal, "SIGTERM"):
 
 
 def main() -> None:
+    # No subcommand → interactive REPL (Hermes-style default)
+    if len(sys.argv) == 1:
+        from src.repl.repl_app import run_repl_textual
+
+        run_repl_textual()
+        return
     try:
         app()
     except CognitionEngineError as exc:
