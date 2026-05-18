@@ -64,6 +64,22 @@ def test_config_list(tmp_path: Path):
         assert "shield_sensitivity" in r.stdout or "default_model" in r.stdout
 
 
+def test_goal_command(tmp_path: Path):
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _invoke(["init", str(tmp_path)])
+        r = _invoke(
+            [
+                "--project",
+                str(tmp_path),
+                "goal",
+                "--set",
+                "Build an XSS scanner with tests and fixtures.",
+            ],
+        )
+        assert r.exit_code == 0, r.stdout
+        assert (tmp_path / "GOAL.md").is_file()
+
+
 def test_doctor_passes(tmp_path: Path):
     r = _invoke(["doctor"])
     assert r.exit_code == 0, r.stdout + r.stderr

@@ -117,14 +117,27 @@ class Config:
         filename = storage.get(name, name)
         return self.project_root / COGNITION_DIR / filename
 
-    def update(self, key: str, value: Any) -> None:
-        """CLI/runtime override (highest priority)."""
+    def update(self, key: str, value: Any, *, persist: bool = False) -> None:
+        """CLI/runtime override (highest priority). Optionally persist to project config.yaml."""
+        if persist:
+            self._write_project_config_key(key, value)
         parts = key.split(".")
         node = self._cli_overrides
         for part in parts[:-1]:
             node = node.setdefault(part, {})
         node[parts[-1]] = value
         self.reload()
+
+    def _write_project_config_key(self, key: str, value: Any) -> None:
+        path = self.project_root / COGNITION_DIR / "config.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = _load_yaml(path) if path.is_file() else {}
+        parts = key.split(".")
+        node = data
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        node[parts[-1]] = value
+        path.write_text(yaml.safe_dump(data, default_flow_style=False), encoding="utf-8")
 
     def validate(self) -> list[str]:
         """Validate configuration; return list of error messages."""

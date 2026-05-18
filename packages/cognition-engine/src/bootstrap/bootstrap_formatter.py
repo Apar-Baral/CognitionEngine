@@ -24,6 +24,7 @@ class BootstrapParts:
     subtask_name: str = ""
     subtask_progress: int = 0
     objective: str = ""
+    project_goal: str = ""
     previous_session_id: str = ""
     last_completed: str = ""
     last_decisions: list[str] = field(default_factory=list)
@@ -59,6 +60,14 @@ def format_bootstrap(parts: BootstrapParts, max_tokens: int = BOOTSTRAP_MAX_TOKE
         f"Objective: {parts.objective}",
         "",
     ]
+    if parts.project_goal:
+        lines.extend(
+            [
+                "🎯 PROJECT GOAL (full)",
+                parts.project_goal.strip(),
+                "",
+            ]
+        )
 
     prev = parts.previous_session_id or "—"
     lines.extend(

@@ -124,19 +124,21 @@ class DNAMutator:
         session_type: str,
         tokens_consumed: int,
         efficiency_score: float,
+        completion_notes: str = "",
     ) -> dict[str, Any]:
         def apply(dna: dict[str, Any]) -> None:
-            dna.setdefault("sessions_index", []).append(
-                {
-                    "session_id": session_id,
-                    "started_at": started_at,
-                    "ended_at": ended_at,
-                    "phase_id": phase_id,
-                    "session_type": session_type,
-                    "tokens_consumed": tokens_consumed,
-                    "efficiency_score": efficiency_score,
-                }
-            )
+            entry: dict[str, Any] = {
+                "session_id": session_id,
+                "started_at": started_at,
+                "ended_at": ended_at,
+                "phase_id": phase_id,
+                "session_type": session_type,
+                "tokens_consumed": tokens_consumed,
+                "efficiency_score": efficiency_score,
+            }
+            if completion_notes:
+                entry["completion_notes"] = completion_notes
+            dna.setdefault("sessions_index", []).append(entry)
             proj = dna.setdefault("project", {})
             proj["total_sessions"] = len(dna["sessions_index"])
             proj["total_tokens_consumed"] = proj.get("total_tokens_consumed", 0) + tokens_consumed

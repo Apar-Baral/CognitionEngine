@@ -117,6 +117,35 @@ def cmd_init(
         _handle_error(e)
 
 
+@app.command("goal")
+def cmd_goal(
+    set_goal: Optional[str] = typer.Option(None, "--set", "-s", help="Set the full project goal"),
+    show: bool = typer.Option(False, "--show", help="Print current goal"),
+) -> None:
+    """View or set the full project goal (shown in bootstrap and GOAL.md)."""
+    try:
+        ctx = _ctx()
+        ctx.require_initialized()
+        if set_goal:
+            ctx.set_project_goal(set_goal)
+            _write_goal_file(ctx, set_goal)
+            formatters.print_success("Project goal updated.")
+            formatters.print_info(set_goal[:500] + ("..." if len(set_goal) > 500 else ""))
+            raise typer.Exit(0)
+        goal = ctx.get_project_goal()
+        if show or not set_goal:
+            if not goal:
+                formatters.print_warning(
+                    "No goal set. Use: cognition-engine goal --set \"Your full goal...\" "
+                    "or cognition-engine plan --goal \"...\""
+                )
+                raise typer.Exit(0)
+            formatters.print_rule("Project goal")
+            formatters.print_renderable(formatters.format_code_block(goal, "text"))
+    except Exception as e:
+        _handle_error(e)
+
+
 @app.command("plan")
 def cmd_plan(
     goal: Optional[str] = typer.Option(None, "--goal", "-g", help="Project goal description"),
@@ -155,7 +184,8 @@ def cmd_plan(
             )
         )
         if prompts.confirm("Save this plan?", True):
-            ctx.save_plan(phase_list)
+            ctx.save_plan(phase_list, goal=goal or "")
+            _write_goal_file(ctx, goal or "")
             est_sessions = max(len(phase_list) * 2, len(phase_list))
             formatters.print_success(
                 f"Plan saved. {len(phase_list)} phases defined. "
@@ -183,8 +213,7 @@ def cmd_start(
             formatters.print_warning("No plan found. Run `cognition-engine plan` first.")
             raise typer.Exit(1)
 
-        if model:
-            ctx.config.update("default_model", model)
+        active_model = _apply_session_model(ctx, model)
 
         gen = ctx.bootstrap_generator()
         if preview:
@@ -201,12 +230,17 @@ def cmd_start(
                 "session_id": sid,
                 "budget": budget_tokens,
                 "session_type": "BUILD",
-                "model": model or ctx.config.get("default_model"),
+                "model": active_model,
             }
         )
 
         phase_obj = ctx.query.get_current_phase()
         formatters.print_rule("Session ready")
+        goal_preview = ctx.get_project_goal()
+        if goal_preview:
+            preview = goal_preview if len(goal_preview) <= 120 else goal_preview[:117] + "..."
+            formatters.print_info(f"Project goal: {preview}")
+        formatters.print_info(f"Model: {active_model}")
         formatters.print_info(f"Phase: {bootstrap.get('phase_id')} | Sub-task: {bootstrap.get('sub_task_id')}")
         formatters.print_info(f"Budget: {budget_tokens:,} tokens | Predicted: {bootstrap.get('predicted_tokens', 0):,}")
         formatters.print_info(f"Bootstrap: {ctx.cognition_dir / 'bootstrap.md'}")
@@ -237,9 +271,9 @@ def cmd_end(
         op = ctx.active_operational_memory()
         if tokens:
             op.log_api_call("session", "aggregate", tokens // 2, tokens - tokens // 2)
-        sess_summary = op.get_session_summary()
         if summary:
-            sess_summary["completion_notes"] = summary
+            op.set_completion_notes(summary)
+        sess_summary = op.get_session_summary()
 
         phase = ctx.query.get_current_phase()
         phase_id = phase.get("id", "PHASE_01") if phase else "PHASE_01"
@@ -297,7 +331,7 @@ def cmd_doctor() -> None:
 
     pkg_root = Path(src.__file__).resolve().parent
     checks: list[tuple[str, bool]] = [
-        ("Package version >= 0.1.1", __version__ >= "0.1.1"),
+        ("Package version >= 0.1.2", __version__ >= "0.1.2"),
         ("session_tokens.py present", (pkg_root / "memory" / "session_tokens.py").is_file()),
         (
             "Token dict normalization works",
@@ -505,8 +539,12 @@ def cmd_config(
             formatters.print_renderable(formatters.format_table(["Key", "Value"], sorted(rows)))
             raise typer.Exit(0)
         if key and value is not None:
-            ctx.config.update(key, _parse_value(value))
-            formatters.print_success(f"Set {key} = {value}")
+            parsed = _parse_value(value)
+            ctx.config.update(key, parsed, persist=True)
+            if key == "default_model":
+                _print_model_updated(ctx, str(parsed))
+            else:
+                formatters.print_success(f"Set {key} = {value} (saved to .cognition/config.yaml)")
             raise typer.Exit(0)
         if key:
             val = ctx.config.get(key)
@@ -615,6 +653,48 @@ def _mask(key: str, value: object) -> str:
     if "key" in key.lower() or "secret" in key.lower():
         return "********"
     return str(value)
+
+
+def _apply_session_model(ctx: ProjectContext, model: Optional[str]) -> str:
+    """Resolve model for session; persist and confirm when --model is passed."""
+    if model:
+        reg = ctx.model_registry()
+        known = reg.list_models()
+        if model not in known:
+            formatters.print_warning(
+                f"Model '{model}' is not in the registry. Known: {', '.join(known[:8])}"
+                + ("..." if len(known) > 8 else "")
+            )
+        ctx.config.update("default_model", model, persist=True)
+        _print_model_updated(ctx, model)
+        return model
+    active = str(ctx.config.get("default_model", "claude-sonnet"))
+    formatters.print_info(f"Using model: {active} (set with --model ID to change)")
+    return active
+
+
+def _print_model_updated(ctx: ProjectContext, model_id: str) -> None:
+    reg = ctx.model_registry()
+    meta = reg.get_model(model_id) or {}
+    label = meta.get("display_name") or model_id
+    tier = meta.get("tier", "")
+    tier_note = f" [{tier}]" if tier else ""
+    formatters.print_success(f"Model updated to {model_id} ({label}){tier_note}")
+    formatters.print_info("Saved in .cognition/config.yaml")
+
+
+def _write_goal_file(ctx: ProjectContext, goal: str) -> None:
+    if not goal.strip():
+        return
+    path = ctx.root / "GOAL.md"
+    body = (
+        "# Project goal\n\n"
+        f"{goal.strip()}\n\n"
+        "---\n\n"
+        "_Managed by Cognition Engine (`cognition-engine goal --set`)._\n"
+    )
+    path.write_text(body, encoding="utf-8")
+    formatters.print_info(f"Goal file: {path}")
 
 
 def _parse_value(raw: str) -> object:

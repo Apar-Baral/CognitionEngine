@@ -98,6 +98,7 @@ DNA_SCHEMA: dict[str, Any] = {
                 "total_tokens_consumed": {"type": "integer", "minimum": 0},
                 "total_hallucinations_caught": {"type": "integer", "minimum": 0},
                 "total_tokens_saved": {"type": "integer", "minimum": 0},
+                "goal": {"type": "string"},
             },
         },
         "sub_task": {

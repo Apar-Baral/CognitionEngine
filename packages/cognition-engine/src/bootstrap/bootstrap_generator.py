@@ -118,6 +118,7 @@ class BootstrapGenerator:
 
         active_sub = _active_subtask(state, tactical_ctx)
         sub_id = active_sub.get("id") if active_sub else ""
+        project_goal = str(self.query.refresh().get("project", {}).get("goal", "") or "")
         objective = task_description or (
             (active_sub.get("next_action") if active_sub else None)
             or (active_sub.get("name") if active_sub else "")
@@ -197,6 +198,7 @@ class BootstrapGenerator:
             subtask_name=(active_sub.get("name") if active_sub else "—") or "—",
             subtask_progress=int(active_sub.get("progress", 0)) if active_sub else 0,
             objective=objective,
+            project_goal=project_goal,
             previous_session_id=prev_sid,
             last_completed=(
                 last_session.get("completion_notes", "")

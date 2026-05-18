@@ -109,6 +109,6 @@ def generate_goal_plan(
             name, desc = _PHASE_TEMPLATES[i]
         else:
             name, desc = (f"Milestone {i + 1}", f"Advance: {goal[:80]}")
-        phase = _phase(i + 1, name, f"{desc}. Goal context: {goal[:200]}")
+        phase = _phase(i + 1, name, f"{desc}. See project goal in bootstrap (GOAL.md / DNA).")
         phases.append(phase)
     return phases

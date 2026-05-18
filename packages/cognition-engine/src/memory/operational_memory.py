@@ -36,6 +36,10 @@ class OperationalMemory:
         self._decisions: list[dict[str, Any]] = []
         self._user_interactions: list[dict[str, Any]] = []
         self._agent_actions: list[dict[str, Any]] = []
+        self._completion_notes: str = ""
+
+    def set_completion_notes(self, notes: str) -> None:
+        self._completion_notes = notes.strip()
 
     def _ts(self) -> str:
         return datetime.now(timezone.utc).isoformat()
@@ -215,6 +219,7 @@ class OperationalMemory:
             "efficiency_score": round(efficiency, 2),
             "budget_adherence_percentage": round(100.0 - max(0, budget_pct - 100), 2),
             "api_calls_count": len(self._api_calls),
+            "completion_notes": self._completion_notes,
         }
 
     def get_realtime_stats(self) -> dict[str, Any]:
@@ -292,6 +297,7 @@ class OperationalMemory:
             session_type=self.session_type,
             tokens_consumed=summary["tokens"]["total"],
             efficiency_score=score,
+            completion_notes=summary.get("completion_notes", ""),
         )
 
         for h in self._hallucinations:

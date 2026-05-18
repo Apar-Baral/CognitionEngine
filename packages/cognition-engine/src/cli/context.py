@@ -56,6 +56,7 @@ def empty_dna(project_name: str) -> dict[str, Any]:
             "total_tokens_consumed": 0,
             "total_hallucinations_caught": 0,
             "total_tokens_saved": 0,
+            "goal": "",
         },
         "master_plan": {
             "total_phases": 0,
@@ -255,15 +256,26 @@ class ProjectContext:
             )
         return {"dna": dna, "scan": scan}
 
-    def save_plan(self, phases: list[dict[str, Any]]) -> dict[str, Any]:
+    def save_plan(self, phases: list[dict[str, Any]], *, goal: str = "") -> dict[str, Any]:
         dna = self.loader.load(force_reload=True)
         dna["master_plan"]["phase_sequence"] = phases
         dna["master_plan"]["total_phases"] = len(phases)
         dna["master_plan"]["current_phase"] = 1 if phases else 0
         if phases and phases[0].get("status") == PhaseStatus.NOT_STARTED.value:
             phases[0]["status"] = PhaseStatus.IN_PROGRESS.value
+        if goal:
+            dna.setdefault("project", {})["goal"] = goal.strip()
         dna["project"]["last_updated"] = datetime.now(timezone.utc).isoformat()
         return self.loader.save(dna)
+
+    def set_project_goal(self, goal: str) -> dict[str, Any]:
+        dna = self.loader.load(force_reload=True)
+        dna.setdefault("project", {})["goal"] = goal.strip()
+        dna["project"]["last_updated"] = datetime.now(timezone.utc).isoformat()
+        return self.loader.save(dna)
+
+    def get_project_goal(self) -> str:
+        return str(self.query.refresh().get("project", {}).get("goal", "") or "")
 
     def model_registry(self) -> Any:
         from src.models.dynamic_registry import DynamicRegistry
