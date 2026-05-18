@@ -11,6 +11,9 @@ CE_TIPS: list[str] = [
     "Token usage updates live in the top bar during chat.",
     "Esc cancels a running model request.",
     "Type /goal once, then Generate plan for a full roadmap.",
-    "CE auto-commits on /end with your git name from ~/.cognition/config.yaml.",
+    "/end can auto-commit with git.user_name in ~/.cognition/config.yaml.",
+    "Set CE_GIT_USER_NAME and CE_GIT_USER_EMAIL for session commits.",
+    "Manual commit: git add -A && git commit -m 'your message' in your shell.",
     "Run grep, python, and pipelines via the agent when you ask in chat.",
+    "Change the model dropdown — the active API key slot updates automatically.",
 ]

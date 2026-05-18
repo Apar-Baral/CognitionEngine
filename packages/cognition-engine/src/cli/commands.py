@@ -95,7 +95,7 @@ def cmd_setup(
         None, "--project", "-p", help="Project directory (default: current folder)"
     ),
     full: bool = typer.Option(
-        False, "--full", help="Full wizard (git, GitHub, model list). Default is quick Hermes-style setup."
+        False, "--full", help="Full wizard (git, GitHub, model list). Default is quick Baral setup."
     ),
     non_interactive: bool = typer.Option(
         False, "--yes", "-y", help="Skip interactive prompts"
@@ -460,7 +460,7 @@ def cmd_doctor() -> None:
 
     pkg_root = Path(src.__file__).resolve().parent
     checks: list[tuple[str, bool]] = [
-        ("Package version >= 0.3.24", __version__ >= "0.3.24"),
+        ("Package version >= 0.3.25", __version__ >= "0.3.25"),
         ("session_tokens.py present", (pkg_root / "memory" / "session_tokens.py").is_file()),
         (
             "Token dict normalization works",

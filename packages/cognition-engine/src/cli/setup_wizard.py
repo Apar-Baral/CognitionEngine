@@ -123,7 +123,7 @@ def prompt_git_setup(project_root: Path, *, interactive: bool = True) -> bool:
 
 def prompt_github_push(project_root: Path, *, interactive: bool = True) -> str:
     """
-    Ask to push the working project to GitHub (Hermes-style).
+    Ask to push the working project to GitHub.
     Returns status: skipped | declined | success | failed | already_remote
     """
     if not interactive or not is_git_repo(project_root):
@@ -296,10 +296,10 @@ def run_full_setup(
     quick: bool = True,
 ) -> None:
     if quick and interactive:
-        from src.cli.hermes_setup import hermes_quick_setup
+        from src.cli.baral_setup import baral_quick_setup
 
         root = project_path or Path.cwd()
-        hermes_quick_setup(
+        baral_quick_setup(
             root,
             ask_keys=True,
             ask_model=True,

@@ -1,4 +1,4 @@
-"""Hermes-style: always run CE on its own venv — never ask user to activate."""
+"""Always run CE on its own venv — never ask user to activate."""
 
 from __future__ import annotations
 

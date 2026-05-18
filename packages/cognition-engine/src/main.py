@@ -28,12 +28,12 @@ def main() -> None:
 
     reexec_in_cognition_venv()
 
-    # No subcommand → interactive REPL (Hermes-style default)
+    # No subcommand → interactive REPL (default)
     if len(sys.argv) == 1:
         import os
 
         from src.cli.context import resolve_project_root
-        from src.cli.hermes_setup import hermes_quick_setup, needs_quick_setup
+        from src.cli.baral_setup import baral_quick_setup, needs_quick_setup
         from src.repl.repl_app import run_repl_textual
 
         root = resolve_project_root()
@@ -44,7 +44,7 @@ def main() -> None:
                 and sys.stdin.isatty()
             )
             if not defer_to_tui:
-                hermes_quick_setup(root, ask_keys=True, ask_model=True, init_project=False)
+                baral_quick_setup(root, ask_keys=True, ask_model=True, init_project=False)
                 os.environ["CE_SETUP_DONE"] = "1"
         else:
             os.environ["CE_SETUP_DONE"] = "1"

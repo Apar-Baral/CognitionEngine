@@ -41,6 +41,7 @@ from src.cli.setup_summary import (
 from src.repl.clipboard_util import copy_to_clipboard
 from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP
 from src.repl.session_bridge import SessionBridge
+from src.repl.thinking_anim import thinking_panel_markup, thinking_trace_line
 from src.repl.tips import CE_TIPS
 from src.repl.trace_viz import trace_lane_markup
 
@@ -58,23 +59,11 @@ COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-shield", "Shield info", ""),
     ("btn-status", "Track progress", ""),
     ("btn-end", "End session", ""),
-    ("btn-commit", "Git hint", ""),
     ("btn-setup", "Setup keys", "primary"),
     ("btn-quit", "Exit CE", "danger"),
 ]
 
-COMMAND_HINTS = """[dim]Copy:[/] Ctrl+Shift+C last reply
-[dim]Model:[/] dropdown updates key slot live"""
-
-_THINK_FRAMES = ("◐", "◓", "◑", "◒")
-_THINK_PHASES = (
-    "Reading project context",
-    "Assembling memory & plan",
-    "Calling the model",
-    "Waiting for response",
-    "Parsing & validating",
-)
-_THINK_DOTS = ("", ".", "..", "...")
+COMMAND_HINTS = """[dim]Tips rotate at the bottom · Ctrl+Shift+C copy[/]"""
 
 
 @dataclass(frozen=True)
@@ -258,7 +247,7 @@ class QuickSetupScreen(ModalScreen[bool]):
 
     @on(Button.Pressed, "#setup-save")
     def _save(self, _event: Button.Pressed) -> None:
-        from src.cli.hermes_setup import persist_setup_choices
+        from src.cli.baral_setup import persist_setup_choices
 
         key = self.query_one("#setup-api-key", Input).value.strip()
         persist_setup_choices(
@@ -612,7 +601,9 @@ class CognitionReplApp(App):
 
     def _clear_chat_thinking(self) -> None:
         try:
-            self.query_one("#chat-thinking", Static).update("")
+            panel = self.query_one("#chat-thinking", Static)
+            panel.update("")
+            panel.remove_class("-active")
         except Exception:
             pass
 
@@ -692,33 +683,30 @@ class CognitionReplApp(App):
 
     def _start_thinking(self) -> None:
         self._thinking_tick = 0
+        self.query_one("#chat-thinking", Static).add_class("-active")
+        self.query_one("#thinking-bar", Static).add_class("-active")
         self._tick_thinking()
         if self._thinking_timer is not None:
             self._thinking_timer.stop()
-        self._thinking_timer = self.set_interval(0.35, self._tick_thinking)
-
-    def _thinking_markup(self) -> str:
-        frame = _THINK_FRAMES[self._thinking_tick % len(_THINK_FRAMES)]
-        phase = _THINK_PHASES[(self._thinking_tick // 2) % len(_THINK_PHASES)]
-        dots = _THINK_DOTS[self._thinking_tick % len(_THINK_DOTS)]
-        return (
-            f"[bold #6cb6ff]{frame}[/] [italic]{phase}[/][dim]{dots}[/]  "
-            f"[dim]Esc cancel · Ctrl+Shift+C copy last reply[/]"
-        )
+        self._thinking_timer = self.set_interval(0.12, self._tick_thinking)
 
     def _tick_thinking(self) -> None:
         self._thinking_tick += 1
-        markup = self._thinking_markup()
-        self.query_one("#thinking-bar", Static).update(markup)
-        self.query_one("#chat-thinking", Static).update(
-            f"[bold #6cb6ff]◆ Thinking[/]  {markup}"
-        )
+        panel = thinking_panel_markup(self._thinking_tick)
+        trace = thinking_trace_line(self._thinking_tick)
+        self.query_one("#chat-thinking", Static).update(panel)
+        self.query_one("#thinking-bar", Static).update(trace)
 
     def _stop_thinking(self) -> None:
         if self._thinking_timer is not None:
             self._thinking_timer.stop()
             self._thinking_timer = None
-        self.query_one("#thinking-bar", Static).update("")
+        try:
+            bar = self.query_one("#thinking-bar", Static)
+            bar.update("")
+            bar.remove_class("-active")
+        except Exception:
+            pass
         if not self._typing_timer:
             self._clear_chat_thinking()
 
@@ -750,7 +738,7 @@ class CognitionReplApp(App):
         )
 
     def _migrate_and_reload_keys(self) -> None:
-        from src.cli.hermes_setup import _load_global, _persist_migrated_keys
+        from src.cli.baral_setup import _load_global, _persist_migrated_keys
 
         data = _load_global()
         if data:
@@ -791,7 +779,7 @@ class CognitionReplApp(App):
     def _maybe_open_setup(self) -> None:
         import os
 
-        from src.cli.hermes_setup import needs_quick_setup
+        from src.cli.baral_setup import needs_quick_setup
 
         if os.environ.get("CE_SKIP_SETUP") == "1":
             return
@@ -812,7 +800,7 @@ class CognitionReplApp(App):
             self._refresh_chrome(sync_select=True)
             self._log("[green]✓[/] Model and API key saved. You can chat now.")
         else:
-            from src.cli.hermes_setup import needs_quick_setup
+            from src.cli.baral_setup import needs_quick_setup
 
             if needs_quick_setup():
                 self._log(
@@ -846,9 +834,6 @@ class CognitionReplApp(App):
         elif bid == "btn-end":
             if self._require_project("End session"):
                 self.action_prompt_end()
-        elif bid == "btn-commit":
-            if self._require_project("Git commit"):
-                self._prompt_commit()
         elif bid == "btn-setup":
             self.action_open_setup()
         elif bid == "btn-quit":

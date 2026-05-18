@@ -1,4 +1,4 @@
-"""Hermes-style quick setup — pick model, then API key for that provider."""
+"""Baral quick setup — pick model, then API key for that provider."""
 
 from __future__ import annotations
 
@@ -80,18 +80,6 @@ def _persist_migrated_keys(data: dict[str, Any]) -> None:
 
 def _provider_for_model(model_id: str) -> str:
     return model_provider(model_id)
-
-
-def _has_key_for_provider(keys: dict[str, str], provider: str, *, model_id: str = "") -> bool:
-    if model_id:
-        return has_key_for_model(keys, model_id)
-    if keys.get(provider):
-        return True
-    if provider == "openai_compatible" and (keys.get("openai") or keys.get("deepseek")):
-        return True
-    if provider == "openrouter" and keys.get("openrouter"):
-        return True
-    return False
 
 
 def needs_quick_setup() -> bool:
@@ -195,7 +183,7 @@ def persist_setup_choices(
     return summary
 
 
-def hermes_quick_setup(
+def baral_quick_setup(
     project_path: Path | None = None,
     *,
     ask_keys: bool = True,
@@ -238,7 +226,6 @@ def hermes_quick_setup(
         data["default_model"] = "claude-haiku-20240307"
 
     model_id = str(data["default_model"])
-    provider = _provider_for_model(model_id)
     reg = DynamicRegistry(ensure_models_yaml())
     meta = reg.get_model(model_id) or {}
     display = meta.get("display_name") or model_id
@@ -275,11 +262,11 @@ def hermes_quick_setup(
                     {
                         "default_model": model_id,
                         "git": {
-                "auto_commit": True,
-                "auto_commit_message_prefix": "ce:",
-                "user_name": "",
-                "user_email": "",
-            },
+                            "auto_commit": True,
+                            "auto_commit_message_prefix": "ce:",
+                            "user_name": "",
+                            "user_email": "",
+                        },
                     },
                     default_flow_style=False,
                 ),
@@ -293,7 +280,7 @@ def hermes_quick_setup(
         "project_path": str(root),
         "api_keys_configured": list(_merged_keys(data).keys()),
         "api_keys_display": format_configured_keys(
-            list(_merged_keys(data).keys()), model_id=mid
+            list(_merged_keys(data).keys()), model_id=model_id
         ),
         "install_type": "slim",
         "git_initialized": is_git_repo(root),

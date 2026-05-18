@@ -1,4 +1,4 @@
-"""First launch helper — delegates to Hermes quick setup (single pass)."""
+"""First launch helper — delegates to Baral quick setup (single pass)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from src.cli.context import ProjectContext, resolve_project_root
-from src.cli.hermes_setup import hermes_quick_setup, needs_quick_setup
+from src.cli.baral_setup import baral_quick_setup, needs_quick_setup
 
 
 def ensure_interactive_ready(
@@ -23,7 +23,7 @@ def ensure_interactive_ready(
 
     root = resolve_project_root(project_root)
     if interactive and needs_quick_setup():
-        ctx = hermes_quick_setup(root, ask_keys=True, ask_model=True, init_project=False)
+        ctx = baral_quick_setup(root, ask_keys=True, ask_model=True, init_project=False)
         os.environ["CE_SETUP_DONE"] = "1"
         return ctx
 
@@ -32,6 +32,6 @@ def ensure_interactive_ready(
 
 
 def run_quick_setup_in_terminal(project_root: Path | None = None) -> None:
-    from src.cli.hermes_setup import hermes_quick_setup
+    from src.cli.baral_setup import baral_quick_setup
 
-    hermes_quick_setup(project_root or Path.cwd(), ask_keys=True, init_project=True)
+    baral_quick_setup(project_root or Path.cwd(), ask_keys=True, init_project=True)

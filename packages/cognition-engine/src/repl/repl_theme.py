@@ -198,15 +198,29 @@ Footer {
     height: auto;
     min-height: 1;
     max-height: 8;
-    background: #131a24;
-    border: solid #3d5a80;
-    padding: 0 2;
+    background: #0a0e14;
+    border: solid #2d3a4f;
+    padding: 0 1;
     margin-bottom: 1;
     color: #6cb6ff;
 }
 
 #chat-thinking:empty {
     display: none;
+}
+
+#chat-thinking.-active {
+    min-height: 6;
+    max-height: 10;
+    background: #0d1520;
+    border: solid #6cb6ff;
+    padding: 0 1;
+}
+
+#thinking-bar.-active {
+    min-height: 2;
+    background: #152238;
+    border-bottom: solid #6cb6ff;
 }
 
 #tracker-panel {

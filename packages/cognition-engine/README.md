@@ -52,7 +52,7 @@ On first run, `~/.cognition/models.yaml` is copied from `config/default_models.y
 
 ---
 
-## Hermes-style interactive mode (v0.3+)
+## Baral interactive mode (v0.3+)
 
 ```bash
 cognition-engine              # launches chat REPL (Textual TUI)
