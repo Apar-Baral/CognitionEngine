@@ -1,9 +1,15 @@
 """Cognition Engine REPL visual theme."""
 
-CE_BRAND_MARKUP = """[bold #6cb6ff]    ◈◈◈[/]
-[bold white]COGNITION[/]
-[bold #58a6ff]ENGINE[/]
-[dim italic]By Apar Baral[/]"""
+CE_BRAND_MARKUP = """[bold #58a6ff]╔══════════════════════╗[/]
+[bold #58a6ff]║[/] [bold white] ██████╗███████╗[/] [bold #58a6ff]║[/]
+[bold #58a6ff]║[/] [bold white]██╔════╝██╔════╝[/] [bold #58a6ff]║[/]
+[bold #58a6ff]║[/] [bold white]██║     █████╗[/]  [bold #58a6ff]║[/]
+[bold #58a6ff]║[/] [bold white]██║     ██╔══╝[/]  [bold #58a6ff]║[/]
+[bold #58a6ff]║[/] [bold white]╚██████╗███████╗[/] [bold #58a6ff]║[/]
+[bold #58a6ff]║[/] [bold #6cb6ff] COGNITION ENGINE [/] [bold #58a6ff]║[/]
+[bold #58a6ff]╚══════════════════════╝[/]
+[dim]      advanced agent console[/]
+[bold #e6edf3]      By Apar Baral[/]"""
 
 CE_APP_CSS = """
 Screen {
@@ -27,9 +33,9 @@ Footer {
 }
 
 #left-rail {
-    width: 34;
-    min-width: 30;
-    max-width: 38;
+    width: 36;
+    min-width: 32;
+    max-width: 42;
     height: 1fr;
     background: #111820;
     border-right: solid #2d3a4f;
@@ -45,11 +51,15 @@ Footer {
 }
 
 #ce-brand {
+    width: 100%;
+    height: auto;
+    min-height: 12;
     text-align: center;
     padding: 1 0;
     margin-bottom: 1;
-    border-bottom: solid #2d3a4f;
-    background: #0d1520;
+    border: solid #3d5a80;
+    background: #070d14;
+    content-align: center middle;
 }
 
 .rail-section-title {
@@ -102,6 +112,17 @@ Footer {
     text-style: bold;
 }
 
+#command-buttons Button.-danger {
+    background: #3d1f1f;
+    border: solid #da3633;
+    color: #ffdede;
+}
+
+#command-buttons Button.-danger:hover {
+    background: #5c2525;
+    border: solid #f85149;
+}
+
 #command-hints {
     color: #768390;
     padding: 0 0 1 0;
@@ -125,6 +146,21 @@ Footer {
     border: solid #2d3a4f;
     background: #070b10;
     margin: 1 0 0 0;
+    scrollbar-background: #070b10;
+    scrollbar-color: #3d5a80;
+}
+
+#thinking-bar {
+    height: 1;
+    min-height: 1;
+    padding: 0 2;
+    background: #131a24;
+    border-bottom: solid #2d3a4f;
+    color: #6cb6ff;
+}
+
+#thinking-bar:empty {
+    display: none;
 }
 
 #log {
@@ -136,6 +172,10 @@ Footer {
     margin-top: 1;
     border-top: solid #2d3a4f;
     padding-top: 1;
+}
+
+#composer.-busy #input {
+    opacity: 0.55;
 }
 
 #prompt-glyph {
@@ -192,5 +232,25 @@ ModelPickerScreen {
 .picker-item-current {
     color: #3fb950;
     text-style: bold;
+}
+
+ConfirmQuitScreen {
+    align: center middle;
+}
+
+#quit-frame {
+    width: 56;
+    background: #111820;
+    border: solid #da3633;
+    padding: 1 2;
+}
+
+#quit-actions {
+    height: auto;
+    margin-top: 1;
+}
+
+#quit-actions Button {
+    margin-right: 1;
 }
 """

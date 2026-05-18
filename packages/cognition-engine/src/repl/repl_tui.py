@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
+from textual.timer import Timer
 from textual.widgets import (
     Button,
     Footer,
@@ -21,6 +24,7 @@ from textual.widgets import (
     Select,
     Static,
 )
+from textual.worker import Worker, WorkerState
 
 from src.cli.context import resolve_project_root
 from src.cli.model_picker import (
@@ -45,11 +49,46 @@ COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-end", "End session", ""),
     ("btn-commit", "Git commit", ""),
     ("btn-setup", "Setup keys", "primary"),
+    ("btn-quit", "Exit CE", "danger"),
 ]
 
-COMMAND_HINTS = """[dim]Chat:[/] type message + Enter
-[dim]Setup:[/] Setup keys button · /keys status
-[dim]Models:[/] Ctrl+M · PgUp/Dn scroll chat"""
+COMMAND_HINTS = """[dim]Chat:[/] Enter send · scroll anytime
+[dim]Quit:[/] Exit CE · Ctrl+Q · Esc
+[dim]Busy:[/] Esc cancels · PgUp/Dn scroll"""
+
+_THINK_FRAMES = ("◐", "◓", "◑", "◒")
+
+
+@dataclass(frozen=True)
+class ChatJobResult:
+    kind: str
+    payload: str = ""
+
+
+class ConfirmQuitScreen(ModalScreen[bool]):
+    """Confirm before closing the agent console."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="quit-frame"):
+            yield Static("[bold #f85149]Exit Cognition Engine?[/]", id="quit-title")
+            yield Static("[dim]Unsaved chat is kept in this session only.[/dim]", markup=True)
+            with Horizontal(id="quit-actions"):
+                yield Button("Exit", id="quit-yes", variant="error")
+                yield Button("Stay", id="quit-no")
+
+    @on(Button.Pressed, "#quit-yes")
+    def _yes(self, _event: Button.Pressed) -> None:
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#quit-no")
+    def _no(self, _event: Button.Pressed) -> None:
+        self.dismiss(False)
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            self.dismiss(False)
+        elif event.key in ("enter", "y"):
+            self.dismiss(True)
 
 
 class ModelPickerScreen(ModalScreen[str | None]):
@@ -229,7 +268,9 @@ class CognitionReplApp(App):
     SUB_TITLE = "Agent console"
     CSS = CE_APP_CSS
     BINDINGS = [
-        Binding("ctrl+c", "request_quit", "Quit", show=True),
+        Binding("ctrl+q", "confirm_quit", "Exit", show=True),
+        Binding("ctrl+c", "confirm_quit", "Exit", show=False),
+        Binding("escape", "handle_escape", "Cancel", show=True),
         Binding("ctrl+m", "pick_model", "Models", show=True),
         Binding("ctrl+s", "action_start", "Start", show=True),
         Binding("ctrl+e", "prompt_end", "End", show=True),
@@ -245,6 +286,9 @@ class CognitionReplApp(App):
         self._agent = self._build_agent()
         self._select_syncing = False
         self._active_model_id = str(self.bridge.ctx.config.get("default_model", ""))
+        self._thinking_timer: Timer | None = None
+        self._thinking_tick = 0
+        self._chat_busy = False
 
     def _build_agent(self):
         try:
@@ -310,15 +354,17 @@ class CognitionReplApp(App):
                     yield Static("ACTIONS", classes="rail-section-title")
                     with Vertical(id="command-buttons"):
                         for bid, label, variant in COMMAND_BUTTONS:
-                            yield Button(
-                                label,
-                                id=bid,
-                                classes="-primary" if variant == "primary" else "",
-                            )
+                            classes = ""
+                            if variant == "primary":
+                                classes = "-primary"
+                            elif variant == "danger":
+                                classes = "-danger"
+                            yield Button(label, id=bid, classes=classes)
                     yield Static(COMMAND_HINTS, id="command-hints", markup=True)
             with Vertical(id="main-column"):
                 yield Static(self._top_bar_text(), id="top-bar", markup=True)
-                with VerticalScroll(id="chat-scroll"):
+                with VerticalScroll(id="chat-scroll", can_focus=True):
+                    yield Static("", id="thinking-bar", markup=True)
                     yield RichLog(id="log", highlight=True, markup=True, wrap=True)
                 with Horizontal(id="composer"):
                     yield Static("❯", id="prompt-glyph")
@@ -390,7 +436,83 @@ class CognitionReplApp(App):
 
     def _log(self, text: str) -> None:
         self.query_one(RichLog).write(text)
-        self.query_one(VerticalScroll).scroll_end(animate=False)
+        self._scroll_chat_end()
+
+    def _scroll_chat_end(self) -> None:
+        self.query_one("#chat-scroll", VerticalScroll).scroll_end(animate=False)
+
+    def _log_user(self, text: str) -> None:
+        body = text.replace("\n", "\n[white]│ [/white]")
+        self._log(
+            "\n[bold #6cb6ff]┏━ You ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
+            f"[white]│ [/white]{body}\n"
+            "[bold #6cb6ff]┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
+        )
+
+    def _log_assistant(self, text: str) -> None:
+        body = text.replace("\n", "\n[#79c0ff]│ [/#79c0ff]")
+        self._log(
+            "\n[bold #79c0ff]┏━ Assistant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
+            f"[#79c0ff]│ [/#79c0ff]{body}\n"
+            "[bold #79c0ff]┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
+        )
+
+    def _log_system(self, text: str) -> None:
+        self._log(f"[dim]· {text}[/]")
+
+    def _set_chat_busy(self, busy: bool) -> None:
+        self._chat_busy = busy
+        composer = self.query_one("#composer", Horizontal)
+        chat_input = self.query_one("#input", Input)
+        if busy:
+            composer.add_class("-busy")
+            chat_input.disabled = True
+            chat_input.placeholder = "Waiting for model… (Esc to cancel)"
+        else:
+            composer.remove_class("-busy")
+            chat_input.disabled = False
+            chat_input.placeholder = "Ask anything — slash commands optional"
+
+    def _start_thinking(self) -> None:
+        self._thinking_tick = 0
+        self._tick_thinking()
+        if self._thinking_timer is not None:
+            self._thinking_timer.stop()
+        self._thinking_timer = self.set_interval(0.35, self._tick_thinking)
+
+    def _tick_thinking(self) -> None:
+        frame = _THINK_FRAMES[self._thinking_tick % len(_THINK_FRAMES)]
+        self._thinking_tick += 1
+        self.query_one("#thinking-bar", Static).update(
+            f"[bold #6cb6ff]{frame}[/] [italic]Thinking[/] "
+            f"[dim]· scroll chat · Esc cancel[/]"
+        )
+
+    def _stop_thinking(self) -> None:
+        if self._thinking_timer is not None:
+            self._thinking_timer.stop()
+            self._thinking_timer = None
+        self.query_one("#thinking-bar", Static).update("")
+
+    def _chat_sync(self, line: str) -> ChatJobResult:
+        if not self._agent:
+            return ChatJobResult("no_agent")
+        try:
+            reply = self._agent.chat(line)
+            return ChatJobResult("ok", reply)
+        except Exception as exc:
+            return ChatJobResult("error", str(exc))
+
+    def _begin_chat(self, line: str) -> None:
+        self._set_chat_busy(True)
+        self._start_thinking()
+        self.run_worker(
+            self._chat_sync,
+            line,
+            thread=True,
+            exclusive=True,
+            group="chat",
+        )
 
     def on_mount(self) -> None:
         self._try_bind_last_project()
@@ -479,20 +601,82 @@ class CognitionReplApp(App):
                 self._prompt_commit()
         elif bid == "btn-setup":
             self.action_open_setup()
+        elif bid == "btn-quit":
+            self.action_confirm_quit()
 
-    def _run_bridge(self, fn) -> None:
+    def _bridge_call(self, fn: Any) -> str:
         try:
             result = fn()
-            if result:
-                self._log(result)
-            self._refresh_chrome(sync_select=False)
+            return str(result) if result else ""
         except Exception as exc:
             from src.core.exceptions import DNALoadError
 
             if isinstance(exc, DNALoadError):
-                self._require_project("This command")
-            else:
-                self._log(f"[red]{exc}[/]")
+                return f"__DNA__:{exc}"
+            return f"__ERR__:{exc}"
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        if event.worker.group == "bridge":
+            if event.state == WorkerState.SUCCESS:
+                out = str(event.worker.result or "")
+                if out.startswith("__DNA__:"):
+                    self._require_project("This command")
+                elif out.startswith("__ERR__:"):
+                    self._log_system(out[7:])
+                elif out:
+                    self._log_system(out)
+                self._refresh_chrome(sync_select=False)
+            elif event.state == WorkerState.ERROR:
+                self._log_system(str(event.worker.error))
+            return
+        if event.worker.group != "chat":
+            return
+        if event.state not in (WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED):
+            return
+        self._stop_thinking()
+        self._set_chat_busy(False)
+        if event.state == WorkerState.CANCELLED:
+            self._log_system("Request cancelled.")
+            self.query_one("#input", Input).focus()
+            return
+        if event.state == WorkerState.ERROR:
+            err = event.worker.error
+            self._log_assistant(f"[red]Error[/]\n{err}")
+            self.query_one("#input", Input).focus()
+            return
+        result: ChatJobResult = event.worker.result
+        if result.kind == "ok":
+            self._log_assistant(result.payload)
+        elif result.kind == "error":
+            self._log_assistant(f"[red]{result.payload}[/]")
+        elif result.kind == "no_agent":
+            self._log_system(
+                "Chat needs an API key. Click [bold]Setup keys[/] or type /keys"
+            )
+        self._refresh_chrome(sync_select=False)
+        self.query_one("#input", Input).focus()
+        self._scroll_chat_end()
+
+    def _run_bridge(self, fn) -> None:
+        self.run_worker(self._bridge_call, fn, thread=True, group="bridge")
+
+    def _cancel_chat_workers(self) -> None:
+        for worker in self.workers:
+            if worker.group == "chat" and worker.state == WorkerState.RUNNING:
+                worker.cancel()
+
+    def action_confirm_quit(self) -> None:
+        self.push_screen(ConfirmQuitScreen(), self._on_quit_confirmed)
+
+    def _on_quit_confirmed(self, ok: bool | None) -> None:
+        if ok:
+            self.exit()
+
+    def action_handle_escape(self) -> None:
+        if self._chat_busy:
+            self._cancel_chat_workers()
+            return
+        self.action_confirm_quit()
 
     def _prompt_plan(self) -> None:
         if not self._require_project("Generate plan"):
@@ -538,33 +722,37 @@ class CognitionReplApp(App):
         self.query_one(RichLog).clear()
 
     def action_scroll_up(self) -> None:
-        self.query_one(VerticalScroll).scroll_up(animate=False)
+        self.query_one("#chat-scroll", VerticalScroll).scroll_up(animate=False)
 
     def action_scroll_down(self) -> None:
-        self.query_one(VerticalScroll).scroll_down(animate=False)
+        self.query_one("#chat-scroll", VerticalScroll).scroll_down(animate=False)
 
     def action_request_quit(self) -> None:
-        self.exit()
+        self.action_confirm_quit()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
+        if self._chat_busy:
+            return
         line = event.value.strip()
         event.input.value = ""
         if not line:
             return
 
-        self._log(f"[bold #6cb6ff]you[/]  {line}")
-
         if line.startswith("/"):
             cmd = line.split(maxsplit=1)[0].lower()
+            if cmd in ("/exit", "/quit"):
+                self.action_confirm_quit()
+                return
             if cmd in ("/model", "/models") and cmd == "/model" and line.strip().lower() == "/model":
                 self.action_pick_model()
                 return
             if cmd == "/setup":
                 self.action_open_setup()
                 return
+            self._log_user(line)
             result = self.bridge.dispatch(line)
             if result == "__EXIT__":
-                self.exit()
+                self.action_confirm_quit()
                 return
             if line.split(maxsplit=1)[0].lower() in ("/project", "/cd"):
                 self._agent = self._build_agent()
@@ -572,19 +760,14 @@ class CognitionReplApp(App):
                 if cmd == "/models":
                     self._log(format_models_table(self.bridge.ctx.model_registry()))
                 else:
-                    self._log(result)
+                    self._log_system(result)
             self._refresh_chrome(sync_select=False)
             return
 
+        self._log_user(line)
         if self._agent:
-            self._log("[dim italic]Thinking…[/]")
-            try:
-                reply = self._agent.chat(line)
-                self._log(f"[bold #79c0ff]assistant[/]\n{reply}")
-            except Exception as exc:
-                self._log(f"[red]Error: {exc}[/]")
+            self._begin_chat(line)
         else:
-            self._log(
-                "[yellow]Chat needs an API key.[/] Click [bold]Setup keys[/] or type /keys"
+            self._log_system(
+                "Chat needs an API key. Click [bold]Setup keys[/] or type /keys"
             )
-        self._refresh_chrome(sync_select=False)
