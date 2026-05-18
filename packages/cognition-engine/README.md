@@ -54,19 +54,35 @@ On first run, `~/.cognition/models.yaml` is copied from `config/default_models.y
 
 ## Baral interactive mode (v0.3+)
 
+Run the **Textual agent console** from your project (or anywhere):
+
 ```bash
-cognition-engine              # launches chat REPL (Textual TUI)
+cognition-engine              # full-screen TUI (recommended)
 cognition-engine chat         # same
 cognition-engine setup --project .
 ```
 
-- **No env hassle:** CE auto-runs inside `~/CognitionEngine/.../.venv` when installed via `install-ce.sh` (no Kali system-pip errors).
-- **Model picker:** dropdown in the left panel (one click) or `Ctrl+M` search with 1–9 quick keys.
-- **No /help needed:** action buttons (Start, Plan, Status, End, Commit) always visible.
-- **GitHub:** setup asks once to push your project (`gh repo create` or remote URL).
-- **Setup sidebar:** REPL shows model, git, GitHub, and goal from your last setup.
+### Layout
 
-REPL: `/help`, `/model`, `/models`, `/plan`, `/start`, `/end summary`, `/status`, `/commit`. Scroll chat with **PgUp/PgDn**.
+- **Left rail:** project status, **Setup keys**, **Start session**, **Generate plan**, status/shield/end, etc.
+- **Top strip:** **Active** model name + **dropdown** to switch models (same registry as `~/.cognition/models.yaml`). **Ctrl+M** opens the searchable picker.
+- **Center:** chat log and inline agent progress while a turn runs.
+- **Right:** **Agent trace** (tool steps) in its own scroll area.
+- **Bottom:** tips rotate every few seconds (two lines).
+
+### Selection and copy (your terminal, your rules)
+
+- **In-app (default):** Textual handles the mouse. **Drag to select only inside the chat log or the trace log** — rail text, headers, and hints use non-selectable chrome so they no longer “stick” to a selection spanning all three columns.
+- **Terminal Ctrl+Shift+C:** the terminal only sees mouse drags if the app is not capturing them. Run with **`CE_NATIVE_COPY=1`** so Cognition Engine starts with **`mouse=False`**; then use the terminal’s selection + **Ctrl+Shift+C** (or your emulator’s copy). Use **PgUp** / **PgDn** to scroll (wheel may not work in this mode).
+- **Backup:** each assistant reply is still written to **`~/.cognition/last_reply.txt`** for `cat` / `xclip` workflows.
+
+**PgUp** / **PgDn** (with **priority** while the input is focused) scroll the scroll area that contains the focused widget, or the chat column by default.
+
+### Other notes
+
+- **No env hassle:** CE auto-runs inside `~/CognitionEngine/.../.venv` when installed via `install-ce.sh` (no Kali system-pip errors).
+- **GitHub:** setup can ask once to push your project (`gh repo create` or remote URL).
+- **Slash commands:** `/help`, `/setup`, `/model`, `/models`, `/plan`, `/start`, `/end`, `/status`, `/keys`, `/shield`, …
 
 **Kali/Linux — use a venv (never system pip):**
 

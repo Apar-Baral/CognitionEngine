@@ -55,6 +55,12 @@ ce --version
 ce --help
 ```
 
+### Agent console (Textual TUI)
+
+Run **`cognition-engine`** or **`cognition-engine chat`** from your project directory to open the agent console. **Selection:** drag inside the **chat** or **trace** log only (chrome widgets no longer join a single cross-pane highlight). For the terminal’s own selection and **Ctrl+Shift+C**, run with **`CE_NATIVE_COPY=1`**. Each reply is also saved to **`~/.cognition/last_reply.txt`**.
+
+Details: [`packages/cognition-engine/README.md`](packages/cognition-engine/README.md).
+
 ### Linux / Kali: do not use bare `cc`
 
 On Unix, **`cc` is the system C compiler** (gcc), not Cognition Engine. If you see errors like `liblto_plugin.so` or `unrecognized command-line option '--goal'`, you are calling the wrong program.

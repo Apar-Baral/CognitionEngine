@@ -1,5 +1,14 @@
 """Cognition Engine REPL visual theme."""
 
+from textual.widgets import Static
+
+
+class ChromeStatic(Static):
+    """Headers, hints, and rail labels — excluded from cross-pane mouse selection."""
+
+    ALLOW_SELECT = False
+
+
 CE_BRAND_MARKUP = """[bold #58a6ff]COGNITION[/]
 [bold white]ENGINE[/]"""
 
@@ -113,18 +122,20 @@ Footer {
     margin: 0 0 1 0;
 }
 
-#header-model-label {
-    width: 7;
-    min-width: 7;
-    color: #58a6ff;
-    text-style: bold;
+#header-model-line {
+    width: 1fr;
+    min-width: 10;
+    max-width: 48;
+    color: #adbac7;
     content-align: left middle;
+    text-align: left;
+    text-overflow: ellipsis;
 }
 
 #header-strip #model-select {
-    width: 1fr;
-    min-width: 16;
-    max-width: 42;
+    width: auto;
+    min-width: 20;
+    max-width: 34;
     border: solid #388bfd;
     background: #0d1117;
     margin: 0 1;
@@ -211,23 +222,6 @@ Footer {
     padding: 0;
 }
 
-#prompt-display.hidden {
-    display: none;
-    height: 0;
-    margin: 0;
-    padding: 0;
-}
-
-#prompt-display {
-    height: auto;
-    max-height: 2;
-    padding: 0 2;
-    margin: 0;
-    background: transparent;
-    border: none;
-    color: #8b949e;
-}
-
 /* ── Area 3: slim prompt dock ── */
 #composer {
     height: 3;
@@ -307,8 +301,9 @@ Footer {
 }
 
 #tips-bar {
-    height: 2;
-    min-height: 2;
+    height: 3;
+    min-height: 3;
+    max-height: 3;
     background: #0a0e14;
     border-top: solid #2d3a4f;
     padding: 0 1;

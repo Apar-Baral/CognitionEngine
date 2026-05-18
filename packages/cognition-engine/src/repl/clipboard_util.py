@@ -19,6 +19,13 @@ def save_copy_fallback(text: str) -> Path:
     return path
 
 
+def _linux_env() -> dict[str, str]:
+    env = dict(os.environ)
+    if sys.platform.startswith("linux") and not env.get("DISPLAY"):
+        env["DISPLAY"] = ":0"
+    return env
+
+
 def _copy_tkinter(text: str) -> bool:
     global _TK_ROOT
     try:
@@ -37,10 +44,12 @@ def _copy_tkinter(text: str) -> bool:
 
 
 def _copy_xclip(text: str) -> bool:
+    env = _linux_env()
     for cmd in (
         ["xclip", "-selection", "clipboard"],
         ["xclip", "-selection", "primary"],
         ["xsel", "--clipboard", "--input"],
+        ["xsel", "-b", "-i"],
         ["wl-copy"],
     ):
         if not shutil.which(cmd[0]):
@@ -51,10 +60,11 @@ def _copy_xclip(text: str) -> bool:
                 input=text.encode("utf-8"),
                 check=True,
                 capture_output=True,
-                env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")},
+                timeout=10,
+                env=env,
             )
             return True
-        except (OSError, subprocess.CalledProcessError):
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
             continue
     return False
 
@@ -73,6 +83,7 @@ def _copy_powershell(text: str) -> bool:
             ],
             check=True,
             capture_output=True,
+            timeout=15,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         return True
@@ -88,6 +99,7 @@ def _copy_clip_exe(text: str) -> bool:
             ["clip"],
             input=text.encode("utf-16le"),
             check=True,
+            timeout=10,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         return True
@@ -99,23 +111,23 @@ def copy_to_clipboard(text: str) -> tuple[bool, str]:
     if not text.strip():
         return False, "Nothing to copy."
     path = save_copy_fallback(text)
-    methods = (_copy_tkinter, _copy_xclip, _copy_powershell, _copy_clip_exe)
-    for fn in methods:
+    if sys.platform.startswith("linux"):
+        order = (_copy_xclip, _copy_tkinter, _copy_powershell, _copy_clip_exe)
+    else:
+        order = (_copy_tkinter, _copy_powershell, _copy_clip_exe, _copy_xclip)
+    for fn in order:
         try:
             if fn(text):
-                return True, f"Copied to clipboard. Backup: {path}"
+                return True, f"Copied ({len(text):,} chars). Backup: {path}"
         except Exception:
             continue
-    return False, f"Clipboard unavailable. Copied to file: {path}"
+    return False, f"Saved to file (paste from there): {path}"
 
 
 def copy_notify_message(ok: bool, msg: str, path: Path) -> str:
     if ok:
         return msg
+    hint = f"cat {path} | xclip -selection clipboard"
     if sys.platform.startswith("linux"):
-        return (
-            f"{msg}\n"
-            f"[dim]On Kali install:[/] sudo apt install -y xclip\n"
-            f"[dim]Or copy from:[/] {path}"
-        )
-    return f"{msg}\n[dim]Open file:[/] {path}"
+        return f"{msg}\nInstall: sudo apt install -y xclip\nThen: {hint}"
+    return f"{msg}\nOpen: {path}"

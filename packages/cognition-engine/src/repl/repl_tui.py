@@ -44,15 +44,16 @@ from src.cli.setup_summary import (
 )
 from src.repl.chat_log import ChatRichLog
 from src.repl.agent_tasks import TaskBoard, ingest_activity, task_board_markup
-from src.repl.clipboard_util import copy_notify_message, copy_to_clipboard, save_copy_fallback
+from src.repl.clipboard_util import save_copy_fallback
 from src.repl.response_clean import clean_assistant_text
-from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP
+from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP, ChromeStatic
 from src.repl.session_bridge import SessionBridge
 from src.repl.markup_safe import escape_markup
 from src.repl.live_thinking import LiveAgentView, live_thinking_markup
 from src.repl.rail_sidebar import format_left_rail
 from src.repl.thinking_anim import thinking_panel_markup
 from src.repl.tips import CE_TIPS
+from src.repl.welcome import welcome_markup
 from src.repl.trace_viz import trace_lane_markup
 from src.agent.permissions import PermissionDecision
 
@@ -69,7 +70,8 @@ COMMAND_BUTTONS: list[tuple[str, str, str]] = [
 ]
 
 COMMAND_HINTS = (
-    "[dim]Model: top strip · Ctrl+M · PgUp/Dn scroll · Ctrl+Shift+C copy[/]"
+    "[dim]Ctrl+M[/] models · [dim]PgUp[/]/[dim]Dn[/] scroll · "
+    "[dim]Drag-select[/] in chat or trace only · [dim]CE_NATIVE_COPY=1[/] for terminal Ctrl+Shift+C"
 )
 
 
@@ -84,8 +86,8 @@ class ConfirmQuitScreen(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="quit-frame"):
-            yield Static("[bold #f85149]Exit Cognition Engine?[/]", id="quit-title")
-            yield Static("[dim]Unsaved chat is kept in this session only.[/dim]", markup=True)
+            yield ChromeStatic("[bold #f85149]Exit Cognition Engine?[/]", id="quit-title")
+            yield ChromeStatic("[dim]Unsaved chat is kept in this session only.[/dim]", markup=True)
             with Horizontal(id="quit-actions"):
                 yield Button("Exit", id="quit-yes", variant="error")
                 yield Button("Stay", id="quit-no")
@@ -122,12 +124,12 @@ class AgentPermissionScreen(ModalScreen[_PermissionAnswer | None]):
     def compose(self) -> ComposeResult:
         safe = escape_markup(self._detail)
         with Vertical(id="perm-frame"):
-            yield Static(
+            yield ChromeStatic(
                 f"[bold #e3b341]Allow {escape_markup(self._category)}?[/]",
                 id="perm-title",
             )
-            yield Static(safe, id="perm-detail")
-            yield Static(
+            yield ChromeStatic(safe, id="perm-detail")
+            yield ChromeStatic(
                 "[dim]Session = no more prompts for this type until /end[/]",
                 markup=True,
             )
@@ -176,13 +178,13 @@ class ModelPickerScreen(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         current = str(self.bridge.ctx.config.get("default_model", ""))
         with Vertical(id="picker-frame"):
-            yield Static(
+            yield ChromeStatic(
                 f"[bold #6cb6ff]Choose model[/]  [dim]active: {current}[/]",
                 id="picker-title",
             )
             yield Input(placeholder="Search by name, id, or provider…", id="picker-search")
             yield ListView(id="picker-list")
-            yield Static(
+            yield ChromeStatic(
                 "[dim]↑↓ move · Enter select · 1-9 quick pick · Esc close[/dim]",
                 id="picker-footer",
             )
@@ -256,10 +258,10 @@ class QuickSetupScreen(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="setup-frame"):
-            yield Static("[bold #6cb6ff]Setup — model & API key[/]", id="setup-title")
-            yield Static("", id="setup-model-line", markup=True)
+            yield ChromeStatic("[bold #6cb6ff]Setup — model & API key[/]", id="setup-title")
+            yield ChromeStatic("", id="setup-model-line", markup=True)
             yield Button("Choose model…", id="setup-pick-model")
-            yield Static("", id="setup-provider-hint", markup=True)
+            yield ChromeStatic("", id="setup-provider-hint", markup=True)
             yield Input(
                 placeholder="Paste API key (blank if already in env)",
                 id="setup-api-key",
@@ -322,6 +324,12 @@ class QuickSetupScreen(ModalScreen[bool]):
             self.dismiss(False)
 
 
+class ComposerInput(Input):
+    """Bottom prompt — not part of a log-to-log mouse selection rectangle."""
+
+    ALLOW_SELECT = False
+
+
 class CognitionReplApp(App):
     """Professional agent console — no /help required."""
 
@@ -337,14 +345,9 @@ class CognitionReplApp(App):
         Binding("ctrl+m", "pick_model", "Models", show=True),
         Binding("ctrl+s", "action_start", "Start", show=True),
         Binding("ctrl+e", "prompt_end", "End", show=True),
-        Binding("ctrl+shift+c", "copy_smart", "Copy", show=True),
-        Binding("ctrl+shift+t", "copy_trace", "Copy trace", show=True),
-        Binding("ctrl+shift+a", "copy_chat_log", "Copy all", show=True),
-        Binding("ctrl+insert", "copy_smart", "Copy", show=False),
-        Binding("ctrl+y", "copy_last_reply", "Copy", show=False),
         Binding("ctrl+l", "clear_log", "Clear", show=False),
-        Binding("pageup", "scroll_up", "▲", show=False),
-        Binding("pagedown", "scroll_down", "▼", show=False),
+        Binding("pageup", "scroll_up", "▲", show=False, priority=True),
+        Binding("pagedown", "scroll_down", "▼", show=False, priority=True),
     ]
 
     def __init__(self, project_root: Path | None = None) -> None:
@@ -529,7 +532,7 @@ class CognitionReplApp(App):
         with Horizontal(id="workspace"):
             with VerticalScroll(id="left-rail", can_focus=True):
                 with Vertical(id="left-rail-inner"):
-                    yield Static(
+                    yield ChromeStatic(
                         format_left_rail(
                             project_root=self.bridge.root,
                             setup=load_last_setup(),
@@ -539,7 +542,7 @@ class CognitionReplApp(App):
                         id="sidebar-status",
                         markup=True,
                     )
-                    yield Static("ACTIONS", classes="rail-section-title")
+                    yield ChromeStatic("ACTIONS", classes="rail-section-title")
                     with Vertical(id="command-buttons"):
                         for bid, label, variant in COMMAND_BUTTONS:
                             classes = ""
@@ -548,17 +551,17 @@ class CognitionReplApp(App):
                             elif variant == "danger":
                                 classes = "-danger"
                             yield Button(label, id=bid, classes=classes)
-                    yield Static(COMMAND_HINTS, id="command-hints", markup=True)
+                    yield ChromeStatic(COMMAND_HINTS, id="command-hints", markup=True)
             with Vertical(id="chat-column"):
                 with Horizontal(id="header-strip"):
-                    yield Static("Model", id="header-model-label")
+                    yield ChromeStatic(self._header_model_line(), id="header-model-line", markup=True)
                     yield Select(
                         model_options,
                         id="model-select",
-                        prompt="Select model…",
+                        prompt="Change model…",
                         value=model_value,
                     )
-                    yield Static(
+                    yield ChromeStatic(
                         self._header_meta_text(),
                         id="header-meta",
                         markup=True,
@@ -575,18 +578,17 @@ class CognitionReplApp(App):
                 with Vertical(id="thinking-box"):
                     with Horizontal(id="thinking-head"):
                         yield LoadingIndicator(id="think-spinner")
-                        yield Static("", id="chat-thinking", markup=True)
-                    yield Static("", id="task-list", markup=True)
-                    yield Static("", id="thinking-detail", markup=True)
-                yield Static("", id="prompt-display", markup=True)
+                        yield ChromeStatic("", id="chat-thinking", markup=True)
+                    yield ChromeStatic("", id="task-list", markup=True)
+                    yield ChromeStatic("", id="thinking-detail", markup=True)
                 with Horizontal(id="composer"):
-                    yield Static("❯", id="prompt-glyph")
-                    yield Input(
-                        placeholder="Message Cognition Engine…",
+                    yield ChromeStatic("❯", id="prompt-glyph")
+                    yield ComposerInput(
+                        placeholder="Ask anything — slash commands optional",
                         id="input",
                     )
             with Vertical(id="trace-rail"):
-                yield Static("AGENT TRACE", classes="rail-section-title")
+                yield ChromeStatic("AGENT TRACE", classes="rail-section-title")
                 with VerticalScroll(id="activity-scroll", can_focus=True):
                     yield ChatRichLog(
                         id="activity-log",
@@ -596,12 +598,13 @@ class CognitionReplApp(App):
                         auto_scroll=True,
                         min_width=1,
                     )
-                yield Static(
-                    "[dim]Focus pane · Ctrl+Shift+C copy · PgUp/Dn scroll[/]",
+                yield ChromeStatic(
+                    "[dim]Drag in this pane to select trace only · "
+                    "terminal copy:[/] [dim]CE_NATIVE_COPY=1[/]",
                     id="trace-hint",
                     markup=True,
                 )
-        yield Static(self._tip_text(), id="tips-bar", markup=True)
+        yield ChromeStatic(self._tip_text(), id="tips-bar", markup=True)
         yield Footer()
 
     def _setup_panel_text(self) -> str:
@@ -652,6 +655,9 @@ class CognitionReplApp(App):
         name = str(meta.get("display_name") or mid)
         return f"[bold white]{name}[/] [dim]({mid})[/]"
 
+    def _header_model_line(self) -> str:
+        return f"[bold #58a6ff]Active[/]  {self._model_display_text()}"
+
     def _header_meta_text(self) -> str:
         proj = self.bridge.root.name or str(self.bridge.root)
         init = "[#3fb950]●[/]" if self.bridge.ctx.is_initialized() else "[#768390]○[/]"
@@ -688,11 +694,13 @@ class CognitionReplApp(App):
             pass
 
     def _tip_text(self) -> str:
-        tip = CE_TIPS[self._tip_index % len(CE_TIPS)]
-        return f"[bold #6cb6ff]Tip[/]  {tip}"
+        n = len(CE_TIPS)
+        tip_a = CE_TIPS[self._tip_index % n]
+        tip_b = CE_TIPS[(self._tip_index + n // 2) % n]
+        return f"[bold #6cb6ff]Tip[/]  {tip_a}\n[bold #6cb6ff]    [/]  [dim]{tip_b}[/]"
 
     def _tick_tip(self) -> None:
-        self._tip_index += 1
+        self._tip_index += 2
         try:
             self.query_one("#tips-bar", Static).update(self._tip_text())
         except Exception:
@@ -721,6 +729,7 @@ class CognitionReplApp(App):
 
     def _refresh_chrome(self, *, sync_select: bool = False) -> None:
         try:
+            self.query_one("#header-model-line", Static).update(self._header_model_line())
             self.query_one("#header-meta", Static).update(self._header_meta_text())
             self._sync_model_select()
             self.query_one("#sidebar-status", Static).update(
@@ -765,9 +774,6 @@ class CognitionReplApp(App):
         self._last_user_prompt = text
         preview = text if len(text) <= 120 else text[:117] + "…"
         body = escape_markup(preview)
-        pd = self.query_one("#prompt-display", Static)
-        pd.remove_class("hidden")
-        pd.update(f"[dim]You:[/] [white]{body}[/]")
         self._log(
             "\n[bold #6cb6ff]┏━ You ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
             f"[bold white]{body}[/]\n"
@@ -958,42 +964,41 @@ class CognitionReplApp(App):
         self._try_bind_last_project()
         self._active_model_id = str(self.bridge.ctx.config.get("default_model", ""))
         self._sync_model_select()
-        self._tips_timer = self.set_interval(12.0, self._tick_tip)
+        self._tips_timer = self.set_interval(8.0, self._tick_tip)
         self._token_refresh_timer = self.set_interval(1.5, self._refresh_token_bar)
         try:
+            self.query_one("#header-model-line", Static).update(self._header_model_line())
             self.query_one("#header-meta", Static).update(self._header_meta_text())
         except Exception:
             pass
         try:
-            self.query_one("#prompt-display", Static).add_class("hidden")
             self._collapse_agent_progress()
         except Exception:
             pass
         log = self.query_one("#log", ChatRichLog)
-        log.write("[bold #6cb6ff]Cognition Engine[/] ready")
+        goal = ""
+        if self.bridge.ctx.is_initialized():
+            goal = (self.bridge.ctx.get_project_goal() or "").strip()
         log.write(
-            "[dim]Model:[/] top bar dropdown · [bold]Ctrl+M[/] search · "
-            "[dim]Copy:[/] drag with mouse in terminal (same as Kali)"
+            welcome_markup(
+                project_root=str(self.bridge.root),
+                initialized=self.bridge.ctx.is_initialized(),
+                goal=goal,
+            )
         )
         self.query_one("#input", Input).focus()
-        if self.bridge.ctx.is_initialized():
-            log.write(f"[dim]Project:[/] {self.bridge.root}")
-            goal = (self.bridge.ctx.get_project_goal() or "").strip()
-            if goal:
-                preview = goal if len(goal) <= 160 else goal[:157] + "…"
-                log.write(f"[dim]Goal:[/] {preview}")
-            log.write(
-                "[dim]Session context:[/] /start then /bootstrap — not shown here by default"
-            )
-        else:
+        if not self.bridge.ctx.is_initialized():
             last = load_last_setup().get("project_path")
             if last and Path(str(last)).expanduser().resolve() != self.bridge.root.resolve():
                 log.write(
-                    f"[yellow]No CE project in this folder.[/] [dim]Last project:[/] {last}\n"
+                    f"\n[yellow]No CE project in this folder.[/] [dim]Last project:[/] {last}\n"
                     f"[dim]Use[/] /project {last} [dim]or[/] cd there, then [bold]Setup keys[/]"
                 )
             else:
-                log.write("[yellow]Tip:[/] click [bold]Setup keys[/] or: cognition-engine setup")
+                log.write(
+                    "\n[yellow]Not initialized here.[/] Sidebar [bold]Setup keys[/] "
+                    "or: [dim]cognition-engine setup --project .[/]"
+                )
         self._maybe_open_setup()
 
     def _maybe_open_setup(self) -> None:
@@ -1184,90 +1189,6 @@ class CognitionReplApp(App):
         finally:
             self._select_syncing = False
 
-    def _copy_text(self, text: str, *, label: str) -> None:
-        text = text.strip()
-        if not text:
-            self.notify(f"No {label} to copy", severity="warning", timeout=3)
-            return
-        path = save_copy_fallback(text)
-        ok, msg = copy_to_clipboard(text)
-        note = copy_notify_message(ok, msg, path)
-        self.notify(
-            note.split("\n")[0][:120],
-            title="Copy" if ok else "Copy — use file",
-            severity="information" if ok else "warning",
-            timeout=8,
-        )
-        self._log_system(f"[green]✓[/] {label} → {note}")
-
-    def _trace_plain_text(self) -> str:
-        trace = self.query_one("#activity-log", ChatRichLog).plain_text()
-        live = self._live_view.stream.strip()
-        parts = [p for p in (trace, live) if p]
-        return "\n\n--- live stream ---\n\n".join(parts) if parts else ""
-
-    def _all_copy_text(self) -> str:
-        chat = self.query_one("#log", ChatRichLog).plain_text()
-        trace = self._trace_plain_text()
-        if chat and trace:
-            return f"{chat}\n\n=== AGENT TRACE ===\n\n{trace}"
-        return chat or trace
-
-    def action_copy_last_reply(self) -> None:
-        self._copy_text(self._last_assistant_plain, label="last reply")
-
-    def action_copy_trace(self) -> None:
-        self._copy_text(self._trace_plain_text(), label="agent trace")
-
-    def action_copy_chat_log(self) -> None:
-        self._copy_text(self._all_copy_text(), label="chat + trace")
-
-    def _focused_panel_log(self) -> ChatRichLog | None:
-        """RichLog under focus, or the pane the user last clicked."""
-        w = self.focused
-        if isinstance(w, ChatRichLog):
-            return w
-        if isinstance(w, VerticalScroll):
-            try:
-                return w.query_one(ChatRichLog)
-            except Exception:
-                pass
-        # Default: chat log
-        try:
-            return self.query_one("#log", ChatRichLog)
-        except Exception:
-            return None
-
-    def action_copy_smart(self) -> None:
-        selected = self.screen.get_selected_text()
-        if selected and selected.strip():
-            self._copy_text(selected, label="selection")
-            return
-        focused = self.focused
-        if focused is not None:
-            fid = getattr(focused, "id", None)
-            if fid == "activity-log":
-                self._copy_text(self._trace_plain_text(), label="agent trace")
-                return
-            if fid == "log":
-                log = self.query_one("#log", ChatRichLog)
-                self._copy_text(log.plain_text(), label="chat output")
-                return
-        log = self._focused_panel_log()
-        if log is not None:
-            text = log.plain_text()
-            label = "agent trace" if log.id == "activity-log" else "chat output"
-            if text.strip():
-                self._copy_text(text, label=label)
-                return
-        if self._last_assistant_plain.strip():
-            self.action_copy_last_reply()
-        else:
-            self.action_copy_trace()
-
-    def action_copy_selection(self) -> None:
-        self.action_copy_smart()
-
     def action_clear_log(self) -> None:
         self.query_one("#log", ChatRichLog).clear()
 
@@ -1330,15 +1251,6 @@ class CognitionReplApp(App):
                 )
                 self._refresh_chrome(sync_select=False)
                 return
-            if cmd in ("/copy", "/clipboard"):
-                self.action_copy_last_reply()
-                return
-            if cmd in ("/copytrace", "/copy-trace"):
-                self.action_copy_trace()
-                return
-            if cmd == "/copyall":
-                self.action_copy_chat_log()
-                return
             self._log_user(line)
             result = self.bridge.dispatch(line)
             if result == "__EXIT__":
@@ -1372,7 +1284,15 @@ class CognitionReplApp(App):
             )
 
     def run_app(self) -> None:
-        """Run TUI. Mouse on by default (scroll wheel). Set CE_NATIVE_COPY=1 for terminal drag-copy."""
+        """Run TUI.
+
+        Default: Textual captures the mouse (wheel in panes; drag-select only inside
+        the two ``ChatRichLog`` widgets — chrome uses ``ChromeStatic`` so the rail
+        does not join a spanning selection).
+
+        Set ``CE_NATIVE_COPY=1`` to disable Textual mouse so the **terminal** handles
+        drag-select and **Ctrl+Shift+C** (Linux). Scroll with **PgUp** / **PgDn** then.
+        """
         import os
 
         native = os.environ.get("CE_NATIVE_COPY", "0")
