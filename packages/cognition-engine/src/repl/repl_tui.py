@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -46,7 +47,8 @@ from src.repl.clipboard_util import copy_to_clipboard, save_copy_fallback
 from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP
 from src.repl.session_bridge import SessionBridge
 from src.repl.markup_safe import escape_markup
-from src.repl.thinking_anim import thinking_box_markup, thinking_panel_markup
+from src.repl.live_thinking import LiveAgentView, live_thinking_markup
+from src.repl.thinking_anim import thinking_panel_markup
 from src.repl.tips import CE_TIPS
 from src.repl.trace_viz import trace_lane_markup
 from src.agent.permissions import PermissionDecision
@@ -61,11 +63,16 @@ COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-status", "Track progress", ""),
     ("btn-end", "End session", ""),
     ("btn-copy", "Copy reply", "primary"),
+    ("btn-copy-trace", "Copy trace", ""),
+    ("btn-copy-all", "Copy all", ""),
     ("btn-setup", "Setup keys", "primary"),
     ("btn-quit", "Exit CE", "danger"),
 ]
 
-COMMAND_HINTS = """[dim]Tips rotate at the bottom · Ctrl+Shift+C copy[/]"""
+COMMAND_HINTS = (
+    "[dim]Copy: buttons · Ctrl+Shift+C reply · Ctrl+Shift+T trace · "
+    "Ctrl+Shift+A all · also ~/.cognition/last_reply.txt[/]"
+)
 
 
 @dataclass(frozen=True)
@@ -332,9 +339,11 @@ class CognitionReplApp(App):
         Binding("ctrl+m", "pick_model", "Models", show=True),
         Binding("ctrl+s", "action_start", "Start", show=True),
         Binding("ctrl+e", "prompt_end", "End", show=True),
-        Binding("ctrl+shift+c", "copy_last_reply", "Copy", show=True),
+        Binding("ctrl+shift+c", "copy_last_reply", "Copy reply", show=True),
+        Binding("ctrl+shift+t", "copy_trace", "Copy trace", show=True),
+        Binding("ctrl+shift+a", "copy_chat_log", "Copy all", show=True),
+        Binding("ctrl+insert", "copy_smart", "Copy", show=False),
         Binding("ctrl+y", "copy_last_reply", "Copy", show=False),
-        Binding("ctrl+shift+a", "copy_chat_log", "Copy all", show=False),
         Binding("ctrl+l", "clear_log", "Clear", show=False),
         Binding("pageup", "scroll_up", "▲", show=False),
         Binding("pagedown", "scroll_down", "▼", show=False),
@@ -366,6 +375,8 @@ class CognitionReplApp(App):
         self._thinking_min_until = 0.0
         self._last_activity = "Ready"
         self._activity_recent: list[str] = []
+        self._live_view = LiveAgentView(max_steps=40)
+        self._stream_flush_at = 0.0
         self._token_refresh_timer: Timer | None = None
 
     def _build_agent(self):
@@ -377,6 +388,7 @@ class CognitionReplApp(App):
                 on_activity=self._on_agent_activity,
                 on_tokens=self._on_agent_tokens,
                 on_permission=self._request_agent_permission,
+                on_stream=self._on_agent_stream,
             )
         except Exception:
             return None
@@ -414,36 +426,46 @@ class CognitionReplApp(App):
     def _apply_activity(self, msg: str) -> None:
         self._last_activity = msg
         self._activity_recent.append(msg)
-        if len(self._activity_recent) > 24:
-            self._activity_recent = self._activity_recent[-24:]
+        if len(self._activity_recent) > 80:
+            self._activity_recent = self._activity_recent[-80:]
+        self._live_view.status = msg
+        self._live_view.trace = list(self._activity_recent)
+        lower = msg.lower()
+        if "model step" in lower:
+            self._live_view.stream = ""
+            self._live_view.planned = []
+            sm = re.search(r"step\s+(\d+)\s*/\s*(\d+)", lower)
+            if sm:
+                self._live_view.step = int(sm.group(1))
+                self._live_view.max_steps = int(sm.group(2))
+        if "▸ next action:" in lower:
+            plan = msg.split(":", 1)[-1].strip()
+            if plan and (not self._live_view.planned or self._live_view.planned[-1] != plan):
+                self._live_view.planned.append(plan)
         self._log_work(msg)
-        if self._chat_busy and self._activity_is_live_chat(msg):
+        if self._chat_busy:
             safe = escape_markup(msg)
             self._log(f"[dim #8b949e]⚙ {safe}[/]")
         if self._chat_busy:
             self._update_thinking_box()
 
-    @staticmethod
-    def _activity_is_live_chat(msg: str) -> bool:
-        lower = msg.lower()
-        needles = (
-            "writing file",
-            "reading file",
-            "listing directory",
-            "running command",
-            "write result",
-            "command output",
-            "model step",
-            "agentic mode",
-            "agent finished",
-            "permission required",
-            "permission granted",
-            "permission denied",
-            "deleting file",
-            "shield",
-            "done:",
-        )
-        return any(n in lower for n in needles)
+    def _on_agent_stream(self, chunk: str) -> None:
+        if not chunk:
+            return
+        try:
+            self.call_from_thread(self._apply_stream, chunk)
+        except RuntimeError:
+            self._apply_stream(chunk)
+
+    def _apply_stream(self, chunk: str) -> None:
+        self._live_view.stream += chunk
+        if len(self._live_view.stream) > 8000:
+            self._live_view.stream = self._live_view.stream[-8000:]
+        now = time.monotonic()
+        if now - self._stream_flush_at < 0.06:
+            return
+        self._stream_flush_at = now
+        self._update_thinking_box()
 
     def _on_agent_tokens(self, usage: dict[str, int]) -> None:
         try:
@@ -564,7 +586,8 @@ class CognitionReplApp(App):
                         min_width=1,
                     )
                 yield Static(
-                    "[dim]Click chat · drag to select · Ctrl+Shift+C or Copy reply button[/]",
+                    "[dim]Copy trace/all buttons · Ctrl+Shift+T/A/C · "
+                    "fallback ~/.cognition/last_reply.txt[/]",
                     id="trace-hint",
                     markup=True,
                 )
@@ -637,11 +660,7 @@ class CognitionReplApp(App):
 
     def _update_thinking_box(self) -> None:
         try:
-            _, detail = thinking_box_markup(
-                self._thinking_tick,
-                status=self._last_activity,
-                recent=self._activity_recent,
-            )
+            _, detail = live_thinking_markup(self._thinking_tick, self._live_view)
             self.query_one("#thinking-detail", Static).update(detail)
         except Exception:
             pass
@@ -686,7 +705,7 @@ class CognitionReplApp(App):
             self._sync_model_select()
 
     def _log_work(self, text: str) -> None:
-        self.query_one("#activity-log", RichLog).write(trace_lane_markup(text))
+        self.query_one("#activity-log", ChatRichLog).write(trace_lane_markup(text))
         self.query_one("#activity-scroll", VerticalScroll).scroll_end(animate=False)
 
     def _apply_model_from_ui(self, model_id: str) -> None:
@@ -703,7 +722,7 @@ class CognitionReplApp(App):
         self._refresh_chrome(sync_select=False)
 
     def _log(self, text: str) -> None:
-        self.query_one("#log", RichLog).write(text)
+        self.query_one("#log", ChatRichLog).write(text)
         self._scroll_chat_end()
 
     def _scroll_chat_end(self) -> None:
@@ -818,6 +837,8 @@ class CognitionReplApp(App):
     def _start_thinking(self) -> None:
         self._thinking_tick = 0
         self._activity_recent = []
+        self._live_view = LiveAgentView(max_steps=40)
+        self._stream_flush_at = 0.0
         self._thinking_min_until = time.monotonic() + 1.2
         self.query_one("#thinking-box", Vertical).add_class("visible")
         self._update_thinking_box()
@@ -984,6 +1005,10 @@ class CognitionReplApp(App):
                 self.action_prompt_end()
         elif bid == "btn-copy":
             self.action_copy_last_reply()
+        elif bid == "btn-copy-trace":
+            self.action_copy_trace()
+        elif bid == "btn-copy-all":
+            self.action_copy_chat_log()
         elif bid == "btn-setup":
             self.action_open_setup()
         elif bid == "btn-quit":
@@ -1120,14 +1145,8 @@ class CognitionReplApp(App):
             self.notify(f"No {label} to copy", severity="warning", timeout=3)
             return
         path = save_copy_fallback(text)
-        copied = False
-        try:
-            self.copy_to_clipboard(text)
-            copied = True
-        except Exception:
-            ok, _msg = copy_to_clipboard(text)
-            copied = ok
-        if copied:
+        ok, _msg = copy_to_clipboard(text)
+        if ok:
             self.notify(
                 f"Copied {label} to clipboard",
                 title="Copy",
@@ -1139,29 +1158,56 @@ class CognitionReplApp(App):
                 f"Saved to {path} — open that file to copy",
                 title="Copy fallback",
                 severity="warning",
-                timeout=5,
+                timeout=6,
             )
         self._log_system(
             f"[green]✓[/] {label} → "
-            f"{'clipboard' if copied else str(path)}"
+            f"{'clipboard' if ok else str(path)}"
         )
+
+    def _trace_plain_text(self) -> str:
+        trace = self.query_one("#activity-log", ChatRichLog).plain_text()
+        live = self._live_view.stream.strip()
+        parts = [p for p in (trace, live) if p]
+        return "\n\n--- live stream ---\n\n".join(parts) if parts else ""
+
+    def _all_copy_text(self) -> str:
+        chat = self.query_one("#log", ChatRichLog).plain_text()
+        trace = self._trace_plain_text()
+        if chat and trace:
+            return f"{chat}\n\n=== AGENT TRACE ===\n\n{trace}"
+        return chat or trace
 
     def action_copy_last_reply(self) -> None:
         self._copy_text(self._last_assistant_plain, label="last reply")
 
+    def action_copy_trace(self) -> None:
+        self._copy_text(self._trace_plain_text(), label="agent trace")
+
     def action_copy_chat_log(self) -> None:
-        log = self.query_one("#log", ChatRichLog)
-        self._copy_text(log.plain_text(), label="chat log")
+        self._copy_text(self._all_copy_text(), label="chat + trace")
+
+    def action_copy_smart(self) -> None:
+        selected = self.screen.get_selected_text()
+        if selected and selected.strip():
+            self._copy_text(selected, label="selection")
+            return
+        focused = self.focused
+        if isinstance(focused, ChatRichLog):
+            text = focused.plain_text()
+            if text.strip():
+                self._copy_text(text, label="focused panel")
+                return
+        if self._last_assistant_plain.strip():
+            self.action_copy_last_reply()
+        else:
+            self.action_copy_trace()
 
     def action_copy_selection(self) -> None:
-        selected = self.screen.get_selected_text()
-        if selected:
-            self._copy_text(selected, label="selection")
-        else:
-            self.action_copy_last_reply()
+        self.action_copy_smart()
 
     def action_clear_log(self) -> None:
-        self.query_one("#log", RichLog).clear()
+        self.query_one("#log", ChatRichLog).clear()
 
     def action_scroll_up(self) -> None:
         self.query_one("#chat-scroll", VerticalScroll).scroll_up(animate=False)
@@ -1211,6 +1257,9 @@ class CognitionReplApp(App):
                 return
             if cmd in ("/copy", "/clipboard"):
                 self.action_copy_last_reply()
+                return
+            if cmd in ("/copytrace", "/copy-trace"):
+                self.action_copy_trace()
                 return
             if cmd == "/copyall":
                 self.action_copy_chat_log()

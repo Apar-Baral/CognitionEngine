@@ -259,6 +259,10 @@ Footer {
     padding: 1 2;
 }
 
+#log, #activity-log, #thinking-detail {
+    text-style: none;
+}
+
 #composer {
     height: auto;
     margin-top: 1;

@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from src.agent.context_assembler import ContextAssembler
+from src.agent.live_trace import describe_tool_call
 from src.agent.permission_gate import PermissionCallback, SessionPermissionGate
 from src.agent.permissions import permission_for_command, permission_for_tool
 from src.agent.tool_parser import extract_tool_calls
@@ -54,6 +55,7 @@ class AgentOrchestrator:
         on_activity: Callable[[str], None] | None = None,
         on_tokens: Callable[[dict[str, int]], None] | None = None,
         on_permission: PermissionCallback | None = None,
+        on_stream: Callable[[str], None] | None = None,
     ) -> None:
         self.ctx = ctx
         self.assembler = ContextAssembler(ctx)
@@ -68,6 +70,7 @@ class AgentOrchestrator:
             on_request=on_permission,
             on_activity=self._activity,
         )
+        self._on_stream = on_stream or (lambda _chunk: None)
         self.session_tokens: dict[str, int] = {
             "input": 0,
             "output": 0,
@@ -144,7 +147,7 @@ class AgentOrchestrator:
 
         for step in range(1, MAX_AGENT_STEPS + 1):
             self._activity(f"Model step {step}/{MAX_AGENT_STEPS}…")
-            text = self._call_model(model, api_key, system)
+            text = self._call_model(model, api_key, system, step=step)
             calls = extract_tool_calls(text)
             if not calls:
                 last_natural = text.strip()
@@ -159,6 +162,8 @@ class AgentOrchestrator:
                 break
 
             self._history.append({"role": "assistant", "content": text})
+            for call in calls:
+                self._activity(f"▸ Next action: {describe_tool_call(call)}")
             tool_results: list[str] = []
             for call in calls:
                 result = self._execute_tool(call)
@@ -192,7 +197,9 @@ class AgentOrchestrator:
             parts.append(f"**Commands run:** {self._commands_run_this_turn}")
         return " · ".join(parts)
 
-    def _call_model(self, model: dict[str, Any], api_key: str, system: str) -> str:
+    def _call_model(
+        self, model: dict[str, Any], api_key: str, system: str, *, step: int = 0
+    ) -> str:
         model_id = str(model.get("id", self.ctx.config.get("default_model", "?")))
         display = model.get("display_name") or model_id
         self._activity(f"Calling {display} ({DynamicRegistry.api_model_name(model)})…")
@@ -202,26 +209,63 @@ class AgentOrchestrator:
             "messages": messages,
             "max_tokens": 8192,
             "temperature": 0.2,
+            "stream": True,
         }
         url, headers, body = self.builder.build_request(unified, model, api_key=api_key)
         t0 = time.perf_counter()
-        self._activity("Waiting for model response…")
-        with httpx.Client(timeout=180.0) as client:
-            resp = client.post(url, headers=headers, json=body)
-            raw = resp.json() if resp.content else {}
-            if resp.status_code >= 400:
-                err = self.parser.parse_error(raw, resp.status_code)
-                raise RuntimeError(err.get("message", str(raw)))
+        self._activity("Streaming model response (live)…")
+        accumulator: dict[str, Any] = {"content": ""}
+        text = ""
+        usage: dict[str, int] = {}
+        try:
+            with httpx.Client(timeout=180.0) as client:
+                with client.stream("POST", url, headers=headers, json=body) as resp:
+                    if resp.status_code >= 400:
+                        raw = resp.read().decode("utf-8", errors="replace")
+                        try:
+                            import json as _json
+
+                            payload = _json.loads(raw) if raw else {}
+                        except Exception:
+                            payload = {"error": raw}
+                        err = self.parser.parse_error(payload, resp.status_code)
+                        raise RuntimeError(err.get("message", str(payload)))
+                    for line in resp.iter_lines():
+                        if not line:
+                            continue
+                        delta = self.parser.parse_streaming_chunk(line, model, accumulator)
+                        if delta:
+                            self._on_stream(delta)
+                    text = str(accumulator.get("content", "") or "")
+        except (httpx.HTTPError, RuntimeError):
+            raise
+        except Exception:
+            text = ""
+        if not text.strip():
+            self._activity("Stream empty — retrying without stream…")
+            unified.pop("stream", None)
+            url, headers, body = self.builder.build_request(unified, model, api_key=api_key)
+            with httpx.Client(timeout=180.0) as client:
+                resp = client.post(url, headers=headers, json=body)
+                raw = resp.json() if resp.content else {}
+                if resp.status_code >= 400:
+                    err = self.parser.parse_error(raw, resp.status_code)
+                    raise RuntimeError(err.get("message", str(raw)))
+                parsed = self.parser.parse_response(raw, model, latency_ms=0)
+                text = parsed.get("content", "") or ""
+                usage = self.parser.extract_usage(raw, model)
+                if text:
+                    self._on_stream(text)
         latency = (time.perf_counter() - t0) * 1000
         self._activity(f"Response received ({latency:.0f} ms)")
-        parsed = self.parser.parse_response(raw, model, latency_ms=latency)
-        text = parsed.get("content", "") or ""
-        usage = self.parser.extract_usage(raw, model)
-        self._log_tokens(usage)
+        if usage:
+            self._log_tokens(usage)
         inp = int(usage.get("input_tokens", 0))
         out = int(usage.get("output_tokens", 0))
         if inp or out:
             self._activity(f"Tokens this call: ↑{inp:,} in · ↓{out:,} out · Σ{inp + out:,}")
+        if step:
+            self._activity(f"Step {step} model output: {len(text)} chars")
         return text
 
     def _execute_tool(self, data: dict[str, Any]) -> str:
