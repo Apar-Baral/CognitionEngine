@@ -35,14 +35,14 @@ class SessionBridge:
             return "no project"
         dna = self.ctx.query.refresh()
         phases = dna.get("master_plan", {}).get("phase_sequence", [])
-        phase = q.get_current_phase()
+        phase = self.ctx.query.get_current_phase()
         model = self.ctx.config.get("default_model", "?")
         pid = phase.get("id", "—") if phase else "—"
         goal = self.ctx.get_project_goal()
         g = (goal[:32] + "…") if len(goal) > 32 else goal
         if not phases:
             return f"{pid} | {model} | no plan"
-        overall = q.calculate_project_completion()
+        overall = self.ctx.query.calculate_project_completion()
         from src.core.constants import PhaseStatus
 
         done = sum(
