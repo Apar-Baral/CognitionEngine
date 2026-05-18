@@ -271,7 +271,7 @@ echo "$INSTALLED_VER"
 if ! grep -q "def run_chat" "$PKG_DIR/src/repl/repl_tui.py" 2>/dev/null; then
   echo "WARNING: source may be stale — re-run from ~ with: CE_REFRESH=1 curl -fsSL .../install-ce.sh | bash"
 fi
-if ! grep -q 'id="thinking-row"' "$PKG_DIR/src/repl/repl_tui.py" 2>/dev/null; then
+if ! grep -q 'id="think-spinner"' "$PKG_DIR/src/repl/repl_tui.py" 2>/dev/null; then
   echo "WARNING: TUI missing thinking animation — CE_REFRESH=1 install from ~"
 fi
 if ! grep -q "class ChatRichLog" "$PKG_DIR/src/repl/chat_log.py" 2>/dev/null; then
@@ -280,8 +280,8 @@ fi
 if source_has_stale_tui_css; then
   echo "WARNING: invalid TUI CSS still present — re-run installer from ~ (not git pull)"
 fi
-if [ -n "$REMOTE_VER" ] && [ "$(read_local_version)" != "$REMOTE_VER" ]; then
-  echo "WARNING: installed source $(read_local_version) != GitHub master $REMOTE_VER"
+if [ -n "$REMOTE_VER" ] && version_lt "$(read_local_version)" "$REMOTE_VER"; then
+  echo "WARNING: installed source $(read_local_version) is older than GitHub master $REMOTE_VER"
 fi
 "$VENV/bin/cognition-engine" doctor || true
 
