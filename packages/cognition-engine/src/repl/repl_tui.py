@@ -153,12 +153,35 @@ class CognitionReplApp(App):
         except Exception:
             pass
 
+    def _model_select_options(self) -> list[tuple[str, str]]:
+        current = str(self.bridge.ctx.config.get("default_model", ""))
+        opts = select_options_for_widget(
+            self.bridge.ctx.model_registry(),
+            current_id=current,
+        )
+        if opts:
+            return opts
+        return [("claude-sonnet-4-20250514", "Default model")]
+
+    def _model_select_value(self, options: list[tuple[str, str]]) -> str:
+        current = str(self.bridge.ctx.config.get("default_model", ""))
+        if any(mid == current for mid, _ in options):
+            return current
+        return options[0][0]
+
     def compose(self) -> ComposeResult:
+        model_options = self._model_select_options()
+        model_value = self._model_select_value(model_options)
         yield Header(show_clock=True)
         with Horizontal(id="workspace"):
             with Vertical(id="left-rail"):
                 yield Static("MODEL", classes="rail-section-title")
-                yield Select(id="model-select", prompt="Select model…")
+                yield Select(
+                    model_options,
+                    id="model-select",
+                    prompt="Select model…",
+                    value=model_value,
+                )
                 yield Static(self._setup_panel_text(), id="setup-panel", markup=True)
                 yield Static("ACTIONS", classes="rail-section-title")
                 with Vertical(id="command-buttons"):
