@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -506,12 +507,13 @@ class CognitionReplApp(App):
     def _begin_chat(self, line: str) -> None:
         self._set_chat_busy(True)
         self._start_thinking()
+        # Textual run_worker: 2nd positional arg is worker name, not a callable arg.
         self.run_worker(
-            self._chat_sync,
-            line,
+            partial(self._chat_sync, line),
             thread=True,
             exclusive=True,
             group="chat",
+            name="chat",
         )
 
     def on_mount(self) -> None:
@@ -658,7 +660,12 @@ class CognitionReplApp(App):
         self._scroll_chat_end()
 
     def _run_bridge(self, fn) -> None:
-        self.run_worker(self._bridge_call, fn, thread=True, group="bridge")
+        self.run_worker(
+            partial(self._bridge_call, fn),
+            thread=True,
+            group="bridge",
+            name="bridge",
+        )
 
     def _cancel_chat_workers(self) -> None:
         for worker in self.workers:
