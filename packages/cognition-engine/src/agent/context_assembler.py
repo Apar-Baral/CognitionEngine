@@ -40,3 +40,16 @@ class ContextAssembler:
         except Exception:
             pass
         return "\n".join(parts)
+
+    def build_quick_prompt(self) -> str:
+        """Light system prompt for conversational / simple Q&A (no tools)."""
+        parts = [
+            "You are Cognition Engine, a helpful coding assistant.",
+            "Answer clearly and concisely. Do not use tools or JSON tool syntax.",
+            "Do not output DSML or XML tool blocks — plain markdown only.",
+            f"Project: {self.ctx.root}",
+        ]
+        goal = self.ctx.get_project_goal()
+        if goal:
+            parts.append(f"Goal: {goal[:400]}")
+        return "\n".join(parts)

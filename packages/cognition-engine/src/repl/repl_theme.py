@@ -1,9 +1,7 @@
 """Cognition Engine REPL visual theme."""
 
-CE_BRAND_MARKUP = """[bold #58a6ff]╭──────────────╮[/]
-[bold #58a6ff]│[/] [bold white]COGNITION[/] [bold #58a6ff]│[/]
-[bold #58a6ff]│[/] [bold #6cb6ff]ENGINE[/]    [bold #58a6ff]│[/]
-[bold #58a6ff]╰──────────────╯[/]"""
+CE_BRAND_MARKUP = """[bold #58a6ff]COGNITION[/]
+[bold white]ENGINE[/]"""
 
 CE_APP_CSS = """
 Screen {
@@ -24,50 +22,40 @@ Footer {
 
 #workspace {
     height: 1fr;
+    width: 100%;
 }
 
 #left-rail {
-    width: 22;
-    min-width: 20;
-    max-width: 24;
+    width: 28;
+    min-width: 26;
+    max-width: 32;
     height: 1fr;
-    background: #111820;
-    border-right: solid #2d3a4f;
-    scrollbar-background: #111820;
-    scrollbar-color: #3d5a80;
-    scrollbar-gutter: stable;
+    background: #0d1117;
+    border-right: solid #30363d;
+    scrollbar-background: #0d1117;
+    scrollbar-color: #484f58 #0d1117;
 }
 
 #left-rail-inner {
     width: 100%;
     height: auto;
-    padding: 0 1;
+    padding: 1 1;
 }
 
-#ce-brand {
+#sidebar-status {
     width: 100%;
     height: auto;
-    min-height: 5;
-    text-align: center;
-    padding: 1 0;
+    padding: 1;
     margin-bottom: 1;
-    border: solid #3d5a80;
-    background: #070d14;
-    content-align: center middle;
+    border: solid #30363d;
+    background: #161b22;
 }
 
 .rail-section-title {
-    color: #6cb6ff;
+    color: #58a6ff;
     text-style: bold;
     margin: 1 0 0 0;
-    padding: 0 0;
-}
-
-#setup-panel {
-    color: #adbac7;
-    padding: 0 0 1 0;
-    border-bottom: solid #2d3a4f;
-    margin-bottom: 1;
+    padding: 0;
 }
 
 #command-buttons {
@@ -77,96 +65,87 @@ Footer {
 
 #command-buttons Button {
     width: 100%;
+    height: 3;
     margin-bottom: 1;
-    background: #1c2430;
-    border: solid #3d5a80;
+    background: #21262d;
+    border: solid #30363d;
     color: #e6edf3;
+    padding: 0 1;
 }
 
 #command-buttons Button:hover {
-    background: #253040;
-    border: solid #6cb6ff;
+    background: #30363d;
+    border: solid #58a6ff;
 }
 
 #command-buttons Button.-primary {
     background: #1f3d5c;
-    border: solid #6cb6ff;
+    border: solid #58a6ff;
     color: #ffffff;
-    text-style: bold;
 }
 
 #command-buttons Button.-danger {
     background: #3d1f1f;
     border: solid #da3633;
-    color: #ffdede;
-}
-
-#command-buttons Button.-danger:hover {
-    background: #5c2525;
-    border: solid #f85149;
 }
 
 #command-hints {
     color: #768390;
-    padding: 0 0 1 0;
-    border-top: solid #2d3a4f;
+    padding: 1 0;
+    border-top: solid #30363d;
+    height: auto;
 }
 
 #chat-column {
     width: 1fr;
-    min-width: 40;
-}
-
-#trace-rail {
-    width: 52;
-    min-width: 46;
-    max-width: 58;
+    min-width: 0;
     height: 1fr;
-    background: #080c10;
-    border-left: solid #2d3a4f;
-    padding: 0 1;
 }
 
-#trace-hint {
+#model-bar {
     height: auto;
-    color: #768390;
-    padding: 0 0 1 0;
-    text-align: center;
-}
-
-#prompt-display {
-    height: 1;
-    min-height: 1;
-    max-height: 2;
-    padding: 0 2;
-    margin-bottom: 0;
-    background: #0d1520;
-    border: solid #2d3a4f;
-    color: #8b949e;
-}
-
-#top-bar {
-    height: 3;
-    min-height: 3;
-    background: #131a24;
-    border: solid #2d3a4f;
+    min-height: 4;
+    max-height: 5;
+    background: #161b22;
+    border: solid #58a6ff;
     padding: 0 1;
+    margin: 0 0 1 0;
 }
 
-#top-bar-info {
+#model-bar-label {
+    width: 8;
+    min-width: 8;
+    color: #58a6ff;
+    text-style: bold;
+    content-align: left middle;
+}
+
+#model-current {
     width: 1fr;
-    height: 100%;
+    min-width: 12;
+    color: #ffffff;
+    text-style: bold;
     content-align: left middle;
     padding: 0 1;
 }
 
-#top-bar #model-select {
-    width: 32;
-    min-width: 24;
-    max-width: 40;
-    margin: 0 1 0 0;
+#model-bar #model-select {
+    width: 22;
+    min-width: 18;
+    max-width: 28;
     border: solid #6cb6ff;
-    background: #0d1520;
+    background: #0d1117;
+    margin: 0 1 0 0;
+}
+
+#status-bar {
+    height: 2;
+    min-height: 2;
+    background: #131a24;
+    border: solid #2d3a4f;
+    padding: 0 2;
+    color: #adbac7;
+    margin: 0 0 1 0;
 }
 
 #token-bar {
@@ -174,38 +153,33 @@ Footer {
     min-height: 2;
     background: #131a24;
     border: solid #3d5a80;
-    border-top: solid #2d3a4f;
     padding: 0 2;
     color: #e6edf3;
-    content-align: left middle;
     margin: 0;
 }
 
 #tips-bar {
     height: 2;
+    min-height: 2;
     background: #0a0e14;
     border-top: solid #2d3a4f;
     padding: 0 1;
     color: #768390;
-    text-style: italic;
 }
 
 #task-list {
     height: auto;
-    min-height: 1;
-    max-height: 10;
+    max-height: 8;
     padding: 0 1;
-    margin: 0;
 }
 
 #thinking-box {
     display: none;
     height: auto;
-    min-height: 1;
-    max-height: 14;
+    max-height: 10;
     border: solid #6cb6ff;
     background: #0d1520;
-    margin: 1 0;
+    margin: 0 0 1 0;
     padding: 0 1;
 }
 
@@ -215,14 +189,12 @@ Footer {
 
 #thinking-head {
     height: 1;
-    min-height: 1;
 }
 
 #think-spinner {
     width: 3;
     min-width: 3;
     height: 1;
-    content-align: center middle;
 }
 
 #chat-thinking {
@@ -230,57 +202,69 @@ Footer {
 }
 
 #thinking-detail {
-    width: 100%;
     height: auto;
-    padding: 0 0 1 0;
     color: #6cb6ff;
 }
 
-#tracker-panel {
-    height: auto;
-    max-height: 3;
-    display: none;
+#prompt-display {
+    height: 1;
+    min-height: 1;
+    max-height: 2;
+    padding: 0 2;
     background: #0d1520;
     border: solid #2d3a4f;
-    padding: 0 2;
-    margin-bottom: 1;
+    color: #8b949e;
+}
+
+#trace-rail {
+    width: 46;
+    min-width: 40;
+    max-width: 52;
+    height: 1fr;
+    background: #080c10;
+    border-left: solid #30363d;
+    padding: 0 1;
+}
+
+#trace-hint {
+    height: auto;
+    max-height: 3;
+    color: #768390;
+    padding: 0 0 1 0;
 }
 
 #activity-scroll {
     height: 1fr;
+    min-height: 6;
     border: solid #2d3a4f;
     background: #0a0e14;
-    margin-bottom: 1;
-    overflow-x: hidden;
+    scrollbar-background: #0a0e14;
+    scrollbar-color: #484f58 #0a0e14;
 }
 
 #activity-log {
-    padding: 0 1;
     width: 100%;
-    min-width: 44;
+    padding: 0 1;
 }
 
 #chat-scroll {
     height: 1fr;
+    min-height: 8;
     border: solid #2d3a4f;
     background: #070b10;
-    margin: 1 0 0 0;
     scrollbar-background: #070b10;
-    scrollbar-color: #3d5a80;
+    scrollbar-color: #484f58 #070b10;
 }
 
 #log {
     padding: 1 2;
-}
-
-#log, #activity-log, #thinking-detail {
-    text-style: none;
+    width: 100%;
 }
 
 #composer {
     height: auto;
     min-height: 3;
-    margin-top: 0;
+    max-height: 4;
     border-top: solid #2d3a4f;
     padding: 1 0 0 0;
 }
@@ -291,26 +275,19 @@ Footer {
 
 #prompt-glyph {
     width: 3;
-    content-align: center middle;
     color: #6cb6ff;
     text-style: bold;
 }
 
 #input {
     width: 1fr;
-    height: auto;
     min-height: 1;
     border: solid #3d5a80;
     background: #0d1520;
-    padding: 0 1;
 }
 
 #input:focus {
     border: solid #6cb6ff;
-}
-
-#input:disabled {
-    opacity: 0.5;
 }
 
 ModelPickerScreen {
@@ -330,10 +307,6 @@ ModelPickerScreen {
     margin-bottom: 1;
     border: solid #3d5a80;
     background: #0a0e14;
-}
-
-#picker-search:focus {
-    border: solid #6cb6ff;
 }
 
 #picker-list {
@@ -358,20 +331,9 @@ AgentPermissionScreen {
 
 #perm-frame {
     width: 72;
-    max-width: 90;
     background: #111820;
     border: solid #e3b341;
     padding: 1 2;
-}
-
-#perm-detail {
-    margin: 1 0;
-    color: #c9d1d9;
-}
-
-#perm-actions {
-    height: auto;
-    margin-top: 1;
 }
 
 #perm-actions Button {
@@ -387,11 +349,6 @@ ConfirmQuitScreen {
     background: #111820;
     border: solid #da3633;
     padding: 1 2;
-}
-
-#quit-actions {
-    height: auto;
-    margin-top: 1;
 }
 
 #quit-actions Button {

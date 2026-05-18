@@ -50,6 +50,7 @@ from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP
 from src.repl.session_bridge import SessionBridge
 from src.repl.markup_safe import escape_markup
 from src.repl.live_thinking import LiveAgentView, live_thinking_markup
+from src.repl.rail_sidebar import format_left_rail
 from src.repl.thinking_anim import thinking_panel_markup
 from src.repl.tips import CE_TIPS
 from src.repl.trace_viz import trace_lane_markup
@@ -529,8 +530,16 @@ class CognitionReplApp(App):
         with Horizontal(id="workspace"):
             with VerticalScroll(id="left-rail", can_focus=True):
                 with Vertical(id="left-rail-inner"):
-                    yield Static(CE_BRAND_MARKUP, id="ce-brand", markup=True)
-                    yield Static(self._setup_panel_text(), id="setup-panel", markup=True)
+                    yield Static(
+                        format_left_rail(
+                            project_root=self.bridge.root,
+                            setup=load_last_setup(),
+                            project_setup=load_project_setup_summary(self.bridge.root),
+                            ctx=self.bridge.ctx,
+                        ),
+                        id="sidebar-status",
+                        markup=True,
+                    )
                     yield Static("ACTIONS", classes="rail-section-title")
                     with Vertical(id="command-buttons"):
                         for bid, label, variant in COMMAND_BUTTONS:
@@ -542,14 +551,16 @@ class CognitionReplApp(App):
                             yield Button(label, id=bid, classes=classes)
                     yield Static(COMMAND_HINTS, id="command-hints", markup=True)
             with Vertical(id="chat-column"):
-                with Horizontal(id="top-bar"):
-                    yield Static(self._top_bar_info_text(), id="top-bar-info", markup=True)
+                with Horizontal(id="model-bar"):
+                    yield Static("Model", id="model-bar-label")
+                    yield Static(self._model_display_text(), id="model-current", markup=True)
                     yield Select(
                         model_options,
                         id="model-select",
-                        prompt="Model…",
+                        prompt="Change…",
                         value=model_value,
                     )
+                yield Static(self._status_bar_text(), id="status-bar", markup=True)
                 with VerticalScroll(id="chat-scroll", can_focus=True):
                     yield ChatRichLog(
                         id="log",
@@ -635,11 +646,23 @@ class CognitionReplApp(App):
                 pass
         return t
 
-    def _top_bar_info_text(self) -> str:
+    def _model_display_text(self) -> str:
+        from src.cli.model_picker import resolve_model_id
+
+        reg = self.bridge.ctx.model_registry()
+        raw = str(self.bridge.ctx.config.get("default_model", "—"))
+        mid = resolve_model_id(raw, reg) or raw
+        meta = reg.get_model(mid) or {}
+        name = str(meta.get("display_name") or mid)
+        return f"[bold white]{name}[/] [dim]({mid})[/]"
+
+    def _status_bar_text(self) -> str:
         proj = self.bridge.root.name or str(self.bridge.root)
         init = "[#3fb950]●[/]" if self.bridge.ctx.is_initialized() else "[#768390]○[/]"
-        key = "key ✓" if self.bridge.ctx.config.get_api_key("deepseek") or self.bridge.ctx.config.get_api_key("openai") else "[dim]no key[/]"
-        return f"{init} [bold white]{proj}[/]  [dim]{key}[/]  [dim]Tab→input · drag to copy[/]"
+        return (
+            f"{init} [bold]{proj}[/]  "
+            f"[dim]PgUp/PgDn scroll · Ctrl+M models · simple Q = fast reply[/]"
+        )
 
     def _token_bar_text(self) -> str:
         t = self._session_token_totals()
@@ -700,9 +723,20 @@ class CognitionReplApp(App):
             self._select_syncing = False
 
     def _refresh_chrome(self, *, sync_select: bool = False) -> None:
-        self.query_one("#top-bar-info", Static).update(self._top_bar_info_text())
+        try:
+            self.query_one("#model-current", Static).update(self._model_display_text())
+            self.query_one("#status-bar", Static).update(self._status_bar_text())
+            self.query_one("#sidebar-status", Static).update(
+                format_left_rail(
+                    project_root=self.bridge.root,
+                    setup=load_last_setup(),
+                    project_setup=load_project_setup_summary(self.bridge.root),
+                    ctx=self.bridge.ctx,
+                )
+            )
+        except Exception:
+            pass
         self._refresh_token_bar()
-        self.query_one("#setup-panel", Static).update(self._setup_panel_text())
         if sync_select:
             self._sync_model_select()
 
@@ -1293,12 +1327,9 @@ class CognitionReplApp(App):
             )
 
     def run_app(self) -> None:
-        """Run TUI. On Linux, mouse is off by default so the terminal can select/copy text."""
+        """Run TUI. Mouse on by default (scroll wheel). Set CE_NATIVE_COPY=1 for terminal drag-copy."""
         import os
-        import sys
 
-        native = os.environ.get("CE_NATIVE_COPY")
-        if native is None:
-            native = "1" if sys.platform.startswith("linux") else "0"
+        native = os.environ.get("CE_NATIVE_COPY", "0")
         use_mouse = native.strip().lower() not in ("1", "true", "yes")
         self.run(mouse=use_mouse)

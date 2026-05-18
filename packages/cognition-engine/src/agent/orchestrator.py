@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from src.agent.chat_mode import is_agentic_request
 from src.agent.context_assembler import ContextAssembler
 from src.agent.live_trace import describe_tool_call
 from src.agent.permission_gate import PermissionCallback, SessionPermissionGate
@@ -140,14 +141,42 @@ class AgentOrchestrator:
         self._history.append({"role": "user", "content": user_message})
         self._files_written_this_turn = 0
         self._commands_run_this_turn = 0
-        self._activity("Agentic mode — will run tools until task is done or step limit")
+        if is_agentic_request(user_message):
+            return self._chat_agentic(user_message)
+        return self._chat_quick(user_message)
+
+    def _chat_quick(self, user_message: str) -> str:
+        """Single fast LLM turn — no tool loop, no streaming overhead."""
+        self._activity("Quick reply mode…")
+        model, api_key = self._resolve_model()
+        system = self.assembler.build_quick_prompt()
+        text = self._call_model(
+            model,
+            api_key,
+            system,
+            step=0,
+            stream=False,
+            max_tokens=2048,
+            history_limit=8,
+        )
+        from src.repl.response_clean import clean_assistant_text
+
+        reply = clean_assistant_text(text.strip()) or text.strip()
+        if reply:
+            self._activity("Done.")
+            self._history.append({"role": "assistant", "content": reply})
+            return reply
+        return "No response from model."
+
+    def _chat_agentic(self, user_message: str) -> str:
+        self._activity("Agent mode — tools until done")
         model, api_key = self._resolve_model()
         system = self.assembler.build_system_prompt() + "\n" + TOOL_SPEC
         last_natural = ""
 
         for step in range(1, MAX_AGENT_STEPS + 1):
             self._activity(f"Model step {step}/{MAX_AGENT_STEPS}…")
-            text = self._call_model(model, api_key, system, step=step)
+            text = self._call_model(model, api_key, system, step=step, stream=True)
             calls = extract_tool_calls(text)
             if not calls:
                 from src.repl.response_clean import clean_assistant_text
@@ -200,54 +229,37 @@ class AgentOrchestrator:
         return " · ".join(parts)
 
     def _call_model(
-        self, model: dict[str, Any], api_key: str, system: str, *, step: int = 0
+        self,
+        model: dict[str, Any],
+        api_key: str,
+        system: str,
+        *,
+        step: int = 0,
+        stream: bool = True,
+        max_tokens: int = 8192,
+        history_limit: int = 16,
     ) -> str:
         model_id = str(model.get("id", self.ctx.config.get("default_model", "?")))
         display = model.get("display_name") or model_id
-        self._activity(f"Calling {display} ({DynamicRegistry.api_model_name(model)})…")
-        messages = [{"role": m["role"], "content": m["content"]} for m in self._history[-16:]]
+        self._activity(f"Calling {display}…")
+        messages = [
+            {"role": m["role"], "content": m["content"]}
+            for m in self._history[-history_limit:]
+        ]
         unified: dict[str, Any] = {
             "system_prompt": system,
             "messages": messages,
-            "max_tokens": 8192,
-            "temperature": 0.2,
-            "stream": True,
+            "max_tokens": max_tokens,
+            "temperature": 0.3 if not stream else 0.2,
+            "stream": stream,
         }
         url, headers, body = self.builder.build_request(unified, model, api_key=api_key)
         t0 = time.perf_counter()
-        self._activity("Streaming model response (live)…")
-        accumulator: dict[str, Any] = {"content": ""}
-        text = ""
         usage: dict[str, int] = {}
-        try:
-            with httpx.Client(timeout=180.0) as client:
-                with client.stream("POST", url, headers=headers, json=body) as resp:
-                    if resp.status_code >= 400:
-                        raw = resp.read().decode("utf-8", errors="replace")
-                        try:
-                            import json as _json
+        text = ""
 
-                            payload = _json.loads(raw) if raw else {}
-                        except Exception:
-                            payload = {"error": raw}
-                        err = self.parser.parse_error(payload, resp.status_code)
-                        raise RuntimeError(err.get("message", str(payload)))
-                    for line in resp.iter_lines():
-                        if not line:
-                            continue
-                        delta = self.parser.parse_streaming_chunk(line, model, accumulator)
-                        if delta:
-                            self._on_stream(delta)
-                    text = str(accumulator.get("content", "") or "")
-        except (httpx.HTTPError, RuntimeError):
-            raise
-        except Exception:
-            text = ""
-        if not text.strip():
-            self._activity("Stream empty — retrying without stream…")
-            unified.pop("stream", None)
-            url, headers, body = self.builder.build_request(unified, model, api_key=api_key)
-            with httpx.Client(timeout=180.0) as client:
+        if not stream:
+            with httpx.Client(timeout=120.0) as client:
                 resp = client.post(url, headers=headers, json=body)
                 raw = resp.json() if resp.content else {}
                 if resp.status_code >= 400:
@@ -256,18 +268,55 @@ class AgentOrchestrator:
                 parsed = self.parser.parse_response(raw, model, latency_ms=0)
                 text = parsed.get("content", "") or ""
                 usage = self.parser.extract_usage(raw, model)
-                if text:
-                    self._on_stream(text)
+        else:
+            self._activity("Streaming…")
+            accumulator: dict[str, Any] = {"content": ""}
+            try:
+                with httpx.Client(timeout=180.0) as client:
+                    with client.stream("POST", url, headers=headers, json=body) as resp:
+                        if resp.status_code >= 400:
+                            raw = resp.read().decode("utf-8", errors="replace")
+                            try:
+                                import json as _json
+
+                                payload = _json.loads(raw) if raw else {}
+                            except Exception:
+                                payload = {"error": raw}
+                            err = self.parser.parse_error(payload, resp.status_code)
+                            raise RuntimeError(err.get("message", str(payload)))
+                        for line in resp.iter_lines():
+                            if not line:
+                                continue
+                            delta = self.parser.parse_streaming_chunk(
+                                line, model, accumulator
+                            )
+                            if delta:
+                                self._on_stream(delta)
+                        text = str(accumulator.get("content", "") or "")
+            except (httpx.HTTPError, RuntimeError):
+                raise
+            except Exception:
+                text = ""
+            if not text.strip():
+                unified.pop("stream", None)
+                with httpx.Client(timeout=120.0) as client:
+                    resp = client.post(url, headers=headers, json=body)
+                    raw = resp.json() if resp.content else {}
+                    if resp.status_code >= 400:
+                        err = self.parser.parse_error(raw, resp.status_code)
+                        raise RuntimeError(err.get("message", str(raw)))
+                    parsed = self.parser.parse_response(raw, model, latency_ms=0)
+                    text = parsed.get("content", "") or ""
+                    usage = self.parser.extract_usage(raw, model)
+
         latency = (time.perf_counter() - t0) * 1000
-        self._activity(f"Response received ({latency:.0f} ms)")
+        self._activity(f"Response ({latency:.0f} ms)")
         if usage:
             self._log_tokens(usage)
         inp = int(usage.get("input_tokens", 0))
         out = int(usage.get("output_tokens", 0))
         if inp or out:
-            self._activity(f"Tokens this call: ↑{inp:,} in · ↓{out:,} out · Σ{inp + out:,}")
-        if step:
-            self._activity(f"Step {step} model output: {len(text)} chars")
+            self._activity(f"Tokens: ↑{inp:,} ↓{out:,}")
         return text
 
     def _execute_tool(self, data: dict[str, Any]) -> str:
