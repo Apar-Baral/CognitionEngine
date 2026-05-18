@@ -103,6 +103,11 @@ def cmd_setup(
         "--semantic",
         help="Also install Chroma/embeddings (~4GB). Default install is slim.",
     ),
+    github: Optional[bool] = typer.Option(
+        None,
+        "--github/--no-github",
+        help="Push project to GitHub after git init (default: ask)",
+    ),
 ) -> None:
     """First-time setup: global config, models registry, optional project init."""
     try:
@@ -112,6 +117,7 @@ def cmd_setup(
             project_path,
             interactive=not non_interactive,
             init_git=git,
+            push_github=github,
             install_semantic=semantic,
         )
     except Exception as e:
@@ -402,7 +408,7 @@ def cmd_doctor() -> None:
 
     pkg_root = Path(src.__file__).resolve().parent
     checks: list[tuple[str, bool]] = [
-        ("Package version >= 0.3.1", __version__ >= "0.3.1"),
+        ("Package version >= 0.3.2", __version__ >= "0.3.2"),
         ("session_tokens.py present", (pkg_root / "memory" / "session_tokens.py").is_file()),
         (
             "Token dict normalization works",
@@ -425,9 +431,21 @@ def cmd_doctor() -> None:
             ),
         )
 
+    from src.core.env_guard import env_warning_message, runtime_env_status
+
     formatters.print_rule("Install diagnostics")
     formatters.print_info(f"Version: {__version__}")
     formatters.print_info(f"Package path: {pkg_root}")
+    env = runtime_env_status()
+    if env["venv_active"]:
+        formatters.print_success("Python: running inside virtualenv")
+    else:
+        formatters.print_warning("Python: not in virtualenv (CE auto-reexecs when CE venv exists)")
+    if env["ce_venv_found"]:
+        formatters.print_info(f"CE venv: {env['ce_venv_python']}")
+    warn = env_warning_message()
+    if warn:
+        formatters.print_warning(warn)
     try:
         import chromadb  # noqa: F401
 

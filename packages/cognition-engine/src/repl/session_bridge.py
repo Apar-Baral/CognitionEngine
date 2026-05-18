@@ -45,7 +45,7 @@ class SessionBridge:
     def cmd_help(self) -> str:
         return """Commands:
   /help              This help
-  /model ID          Set default model (saved to .cognition/config.yaml)
+  /model [ID]        Pick model (Ctrl+M) or set by ID
   /models            List registered models
   /goal TEXT         Set project goal
   /plan [goal]       Generate master plan
@@ -68,11 +68,26 @@ class SessionBridge:
 
     def cmd_model(self, model_id: str) -> str:
         if not model_id.strip():
-            return "Usage: /model gpt-4o-mini"
-        from src.cli.commands import _apply_session_model, _print_model_updated
+            return "Model picker: press [bold]Ctrl+M[/] or type /model <id>"
+        mid = model_id.strip()
+        reg = self.ctx.model_registry()
+        if mid not in reg.list_models():
+            known = ", ".join(reg.list_models()[:6])
+            return f"Unknown model '{mid}'. Try /models or Ctrl+M. Known: {known}…"
+        self.ctx.config.update("default_model", mid, persist=True)
+        meta = reg.get_model(mid) or {}
+        label = meta.get("display_name") or mid
+        tier = meta.get("tier", "")
+        from src.cli.setup_summary import load_last_setup, save_last_setup, save_project_setup_summary
 
-        _apply_session_model(self.ctx, model_id.strip())
-        return f"Model set to {model_id.strip()}"
+        g = load_last_setup()
+        g["default_model"] = mid
+        save_last_setup(g)
+        if self.ctx.is_initialized():
+            ps = {"default_model": mid}
+            save_project_setup_summary(self.root, ps)
+        tier_note = f" [{tier}]" if tier else ""
+        return f"Model updated to {mid} ({label}){tier_note} — saved to .cognition/config.yaml"
 
     def cmd_goal(self, text: str) -> str:
         if not text.strip():
@@ -173,10 +188,10 @@ class SessionBridge:
         return msg or "Nothing committed."
 
     def cmd_setup(self) -> str:
-        from src.cli.setup_wizard import setup_project
+        from src.cli.setup_wizard import run_full_setup
 
-        setup_project(self.root, reinit=False)
-        return "Project setup complete."
+        run_full_setup(self.root, interactive=True)
+        return "Setup complete — see sidebar for your choices."
 
     def dispatch(self, line: str) -> str:
         line = line.strip()

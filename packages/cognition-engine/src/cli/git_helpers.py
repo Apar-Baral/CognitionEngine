@@ -112,6 +112,120 @@ def auto_commit_prefix(config: Any) -> str:
     return str(config.get("git.auto_commit_message_prefix", "ce:") or "ce:")
 
 
+def has_gh_cli() -> bool:
+    try:
+        r = subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return r.returncode == 0
+    except FileNotFoundError:
+        return False
+
+
+def get_git_remote_url(root: Path) -> str | None:
+    if not is_git_repo(root):
+        return None
+    try:
+        r = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return r.stdout.strip() or None
+    except subprocess.CalledProcessError:
+        return None
+
+
+def push_to_github(
+    root: Path,
+    *,
+    repo_name: str | None = None,
+    private: bool = True,
+    remote_url: str | None = None,
+) -> tuple[bool, str]:
+    """
+    Push project to GitHub via `gh repo create` or manual remote.
+    Returns (success, message).
+    """
+    root = root.resolve()
+    if not is_git_repo(root):
+        return False, "Not a git repository — run git init first."
+
+    branch = "main"
+    try:
+        r = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if r.stdout.strip():
+            branch = r.stdout.strip()
+    except subprocess.CalledProcessError:
+        pass
+
+    if has_gh_cli() and not remote_url:
+        name = repo_name or root.name
+        vis = "private" if private else "public"
+        try:
+            subprocess.run(
+                [
+                    "gh",
+                    "repo",
+                    "create",
+                    name,
+                    f"--{vis}",
+                    "--source=.",
+                    "--remote=origin",
+                    "--push",
+                ],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            url = get_git_remote_url(root) or f"https://github.com/{name}"
+            return True, f"Pushed to GitHub: {url}"
+        except subprocess.CalledProcessError as exc:
+            err = (exc.stderr or exc.stdout or str(exc)).strip()
+            if "already exists" in err.lower() or "remote origin already exists" in err.lower():
+                pass
+            else:
+                return False, f"gh repo create failed: {err[:200]}"
+
+    if remote_url:
+        subprocess.run(["git", "remote", "remove", "origin"], cwd=root, check=False, capture_output=True)
+        subprocess.run(
+            ["git", "remote", "add", "origin", remote_url],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    if not get_git_remote_url(root):
+        return False, "No origin remote. Install GitHub CLI (`gh`) or provide a remote URL."
+
+    try:
+        subprocess.run(
+            ["git", "push", "-u", "origin", branch],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return True, f"Pushed to origin/{branch}: {get_git_remote_url(root)}"
+    except subprocess.CalledProcessError as exc:
+        err = (exc.stderr or exc.stdout or str(exc)).strip()
+        return False, f"git push failed: {err[:200]}"
+
+
 def _default_gitignore() -> str:
     return """# Cognition Engine runtime
 .cognition/sessions/

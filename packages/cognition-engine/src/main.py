@@ -24,6 +24,10 @@ if hasattr(signal, "SIGTERM"):
 
 
 def main() -> None:
+    from src.core.env_guard import reexec_in_cognition_venv
+
+    reexec_in_cognition_venv()
+
     # No subcommand → interactive REPL (Hermes-style default)
     if len(sys.argv) == 1:
         from src.repl.repl_app import run_repl_textual

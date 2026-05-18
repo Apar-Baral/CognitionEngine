@@ -60,7 +60,12 @@ cognition-engine chat         # same
 cognition-engine setup --project .
 ```
 
-REPL slash commands: `/help`, `/model ID`, `/plan`, `/start`, `/end summary`, `/status`, `/commit msg`.
+- **No env hassle:** CE auto-runs inside `~/CognitionEngine/.../.venv` when installed via `install-ce.sh` (no Kali system-pip errors).
+- **Model picker:** `Ctrl+M` or `/model` in the REPL; numbered list during `setup`.
+- **GitHub:** setup asks once to push your project (`gh repo create` or remote URL).
+- **Setup sidebar:** REPL shows model, git, GitHub, and goal from your last setup.
+
+REPL: `/help`, `/model`, `/models`, `/plan`, `/start`, `/end summary`, `/status`, `/commit`. Scroll chat with **PgUp/PgDn**.
 
 **Kali/Linux — use a venv (never system pip):**
 
