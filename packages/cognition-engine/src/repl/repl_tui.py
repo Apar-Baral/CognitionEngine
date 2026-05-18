@@ -70,8 +70,8 @@ COMMAND_BUTTONS: list[tuple[str, str, str]] = [
 ]
 
 COMMAND_HINTS = (
-    "[dim]Ctrl+M[/] models · [dim]PgUp[/]/[dim]Dn[/] scroll · "
-    "[dim]Drag-select[/] in chat or trace only · [dim]CE_NATIVE_COPY=1[/] for terminal Ctrl+Shift+C"
+    "[dim]Ctrl+M[/] model search · [dim]PgUp[/]/[dim]Dn[/] scroll · "
+    "[dim]Click chat log[/] then drag to select"
 )
 
 
@@ -373,6 +373,7 @@ class CognitionReplApp(App):
         self._typing_timer: Timer | None = None
         self._typing_full = ""
         self._typing_pos = 0
+        self._typing_pulse = 0
         self._thinking_min_until = 0.0
         self._last_activity = "Ready"
         self._activity_recent: list[str] = []
@@ -555,11 +556,10 @@ class CognitionReplApp(App):
                     yield ChromeStatic(COMMAND_HINTS, id="command-hints", markup=True)
             with Vertical(id="chat-column"):
                 with Horizontal(id="header-strip"):
-                    yield ChromeStatic(self._header_model_line(), id="header-model-line", markup=True)
                     yield Select(
                         model_options,
                         id="model-select",
-                        prompt="Pick model ▾",
+                        prompt="▼ Choose model",
                         value=model_value,
                     )
                     yield ChromeStatic(
@@ -567,7 +567,7 @@ class CognitionReplApp(App):
                         id="header-meta",
                         markup=True,
                     )
-                with PaneScroll(id="chat-scroll", can_focus=True):
+                with Vertical(id="chat-body"):
                     yield ChatRichLog(
                         id="log",
                         highlight=True,
@@ -592,17 +592,18 @@ class CognitionReplApp(App):
                     yield ChromeStatic("", id="slash-suggest", markup=True, classes="hidden")
             with Vertical(id="trace-rail"):
                 yield ChromeStatic("AGENT TRACE", classes="rail-section-title")
-                with PaneScroll(id="activity-scroll", can_focus=True):
+                with Vertical(id="trace-body"):
                     yield ChatRichLog(
                         id="activity-log",
-                        highlight=False,
+                        highlight=True,
                         markup=True,
                         wrap=True,
                         auto_scroll=True,
                         min_width=1,
                     )
                 yield ChromeStatic(
-                    "[dim]Drag in this pane to select trace only · "
+                    "[dim]Click the log, then drag to select text · "
+                    "Shift+drag if selection does not start · "
                     "terminal copy:[/] [dim]CE_NATIVE_COPY=1[/]",
                     id="trace-hint",
                     markup=True,
@@ -647,19 +648,6 @@ class CognitionReplApp(App):
             except Exception:
                 pass
         return t
-
-    def _model_display_text(self) -> str:
-        from src.cli.model_picker import resolve_model_id
-
-        reg = self.bridge.ctx.model_registry()
-        raw = str(self.bridge.ctx.config.get("default_model", "—"))
-        mid = resolve_model_id(raw, reg) or raw
-        meta = reg.get_model(mid) or {}
-        name = str(meta.get("display_name") or mid)
-        return f"[bold white]{name}[/] [dim]({mid})[/]"
-
-    def _header_model_line(self) -> str:
-        return f"[bold #58a6ff]Active[/]  {self._model_display_text()}"
 
     def _header_meta_text(self) -> str:
         proj = self.bridge.root.name or str(self.bridge.root)
@@ -735,7 +723,6 @@ class CognitionReplApp(App):
 
     def _refresh_chrome(self, *, sync_select: bool = False) -> None:
         try:
-            self.query_one("#header-model-line", Static).update(self._header_model_line())
             self.query_one("#header-meta", Static).update(self._header_meta_text())
             self._sync_model_select()
             self.query_one("#sidebar-status", Static).update(
@@ -754,7 +741,7 @@ class CognitionReplApp(App):
 
     def _log_work(self, text: str) -> None:
         self.query_one("#activity-log", ChatRichLog).write(trace_lane_markup(text))
-        self.query_one("#activity-scroll", VerticalScroll).scroll_end(animate=False)
+        self.query_one("#activity-log", ChatRichLog).scroll_end(animate=False)
 
     def _apply_model_from_ui(self, model_id: str) -> None:
         from src.cli.model_picker import apply_model_choice, resolve_model_id
@@ -774,7 +761,7 @@ class CognitionReplApp(App):
         self._scroll_chat_end()
 
     def _scroll_chat_end(self) -> None:
-        self.query_one("#chat-scroll", PaneScroll).scroll_end(animate=False)
+        self.query_one("#log", ChatRichLog).scroll_end(animate=False)
 
     def _log_user(self, text: str) -> None:
         self._last_user_prompt = text
@@ -827,6 +814,16 @@ class CognitionReplApp(App):
             if "dsml" in low or "<|" in src:
                 return
             if not src.strip():
+                self._typing_pulse += 1
+                dots = "·" * (self._typing_pulse % 4)
+                try:
+                    self.query_one("#thinking-detail", Static).update(
+                        "[bold #58a6ff]╭─ Response ─────────────────────╮[/]\n"
+                        f"[bold #58a6ff]│[/] [dim]{dots}[/][#79c0ff]▌[/]\n"
+                        "[bold #58a6ff]╰────────────────────────────────╯[/]"
+                    )
+                except Exception:
+                    pass
                 return
             step = max(2, min(80, max(len(src) // 20, 4)))
             self._typing_pos = min(len(src), self._typing_pos + step)
@@ -840,7 +837,7 @@ class CognitionReplApp(App):
                     f"[bold #58a6ff]│[/] [#79c0ff]{display}[/][bold #79c0ff]▌[/]\n"
                     f"[bold #58a6ff]╰────────────────────────────────╯[/]"
                 )
-                self.query_one("#chat-scroll", PaneScroll).scroll_end(animate=False)
+                self.query_one("#log", ChatRichLog).scroll_end(animate=False)
             except Exception:
                 pass
             return
@@ -868,7 +865,7 @@ class CognitionReplApp(App):
             f"[bold #58a6ff]│[/] [#79c0ff]{display}[/][bold #79c0ff]▌[/]\n"
             f"[bold #58a6ff]╰────────────────────────────────╯[/]"
         )
-        self.query_one("#chat-scroll", PaneScroll).scroll_end(animate=False)
+        self.query_one("#log", ChatRichLog).scroll_end(animate=False)
 
     def _log_system(self, text: str) -> None:
         self._log(f"[dim]· {text}[/]")
@@ -930,6 +927,8 @@ class CognitionReplApp(App):
         self._stream_flush_at = 0.0
         self._thinking_min_until = time.monotonic() + 1.2
         self.query_one("#thinking-box", Vertical).add_class("visible")
+        self._typing_pulse = 0
+        self._show_streaming_placeholder_frame()
         self._update_thinking_box()
         if self._thinking_timer is not None:
             self._thinking_timer.stop()
@@ -937,7 +936,18 @@ class CognitionReplApp(App):
         self._typing_pos = 0
         if self._typing_timer is not None:
             self._typing_timer.stop()
-        self._typing_timer = self.set_interval(0.022, self._typing_tick)
+        self._typing_timer = self.set_interval(0.016, self._typing_tick)
+
+    def _show_streaming_placeholder_frame(self) -> None:
+        """First paint before any model tokens — instant feedback after Enter."""
+        try:
+            self.query_one("#thinking-detail", Static).update(
+                "[bold #58a6ff]╭─ Response ─────────────────────╮[/]\n"
+                "[bold #58a6ff]│[/] [#79c0ff]▌[/]\n"
+                "[bold #58a6ff]╰────────────────────────────────╯[/]"
+            )
+        except Exception:
+            pass
 
     def _tick_thinking(self) -> None:
         self._thinking_tick += 1
@@ -1011,7 +1021,6 @@ class CognitionReplApp(App):
         self._tips_timer = self.set_interval(8.0, self._tick_tip)
         self._token_refresh_timer = self.set_interval(1.5, self._refresh_token_bar)
         try:
-            self.query_one("#header-model-line", Static).update(self._header_model_line())
             self.query_one("#header-meta", Static).update(self._header_meta_text())
         except Exception:
             pass
@@ -1307,17 +1316,21 @@ class CognitionReplApp(App):
     def action_clear_log(self) -> None:
         self.query_one("#log", ChatRichLog).clear()
 
-    def _scroll_target(self) -> VerticalScroll:
+    def _scroll_target(self) -> VerticalScroll | PaneScroll | ChatRichLog:
         w = self.focused
         if isinstance(w, (VerticalScroll, PaneScroll)):
             return w
         if isinstance(w, ChatRichLog):
-            parent = w.parent
+            return w
+        if w is not None:
+            parent = getattr(w, "parent", None)
             while parent is not None:
                 if isinstance(parent, (VerticalScroll, PaneScroll)):
                     return parent
+                if isinstance(parent, ChatRichLog):
+                    return parent
                 parent = getattr(parent, "parent", None)
-        return self.query_one("#chat-scroll", PaneScroll)
+        return self.query_one("#log", ChatRichLog)
 
     def action_scroll_up(self) -> None:
         self._scroll_target().scroll_up(animate=False)
@@ -1405,12 +1418,11 @@ class CognitionReplApp(App):
     def run_app(self) -> None:
         """Run TUI.
 
-        Default: Textual captures the mouse (wheel in panes; drag-select only inside
-        the two ``ChatRichLog`` widgets — chrome uses ``ChromeStatic`` so the rail
-        does not join a spanning selection).
+        Default: Textual mouse on — **click the chat or trace log**, then drag to select
+        text (RichLog is now the scroll surface; an extra scroll wrapper broke selection).
 
-        Set ``CE_NATIVE_COPY=1`` to disable Textual mouse so the **terminal** handles
-        drag-select and **Ctrl+Shift+C** (Linux). Scroll with **PgUp** / **PgDn** then.
+        ``CE_NATIVE_COPY=1``: terminal owns mouse + **Ctrl+Shift+C**; use **PgUp** / **PgDn**
+        to scroll. Chrome widgets use ``ChromeStatic`` so the rail does not join selection.
         """
         import os
 

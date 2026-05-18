@@ -13,9 +13,9 @@ def welcome_markup(*, project_root: str, initialized: bool, goal: str = "") -> s
         "  5. [bold]End session[/] or [bold]/end summary[/] — saves memory + RL budgets",
         "",
         "[bold]Copy & clipboard[/]",
-        "  Drag to select inside the [bold]chat[/] or [bold]trace[/] pane (labels do not select).",
-        "  Terminal copy (Linux Ctrl+Shift+C): set [dim]CE_NATIVE_COPY=1[/] before launch — "
-        "disables in-app mouse; use [dim]PgUp[/]/[dim]PgDn[/] to scroll.",
+        "  [bold]Click[/] the main chat log (or trace), then drag to select — the log is the scroll area "
+        "(no outer scroll wrapper). Try Shift+drag if your terminal grabs the mouse.",
+        "  Terminal-only selection: [dim]CE_NATIVE_COPY=1[/] disables in-app mouse; use PgUp/Dn to scroll.",
         "  Backup file after each reply: [dim]~/.cognition/last_reply.txt[/]",
         "",
         "[bold]Scroll[/]",

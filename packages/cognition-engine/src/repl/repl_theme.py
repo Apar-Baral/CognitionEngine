@@ -118,7 +118,7 @@ Footer {
     height: 1fr;
 }
 
-/* ── Area 1: single model + project header (no duplicate boxes) ── */
+/* ── Model row: dropdown must stay visible (no squeezed Select) ── */
 #header-strip {
     height: 3;
     min-height: 3;
@@ -129,24 +129,14 @@ Footer {
     margin: 0 0 1 0;
 }
 
-#header-model-line {
-    width: auto;
-    min-width: 8;
-    max-width: 32;
-    color: #adbac7;
-    content-align: left middle;
-    text-align: left;
-    text-overflow: ellipsis;
-}
-
 #header-strip #model-select {
     width: 1fr;
-    min-width: 22;
-    max-width: 100%;
-    border: solid #388bfd;
-    background: #0d1117;
-    margin: 0 1;
-    color: #ffffff;
+    min-width: 28;
+    border: solid #58a6ff;
+    background: #161b22;
+    margin: 0 1 0 0;
+    color: #e6edf3;
+    text-style: bold;
 }
 
 #header-strip #model-select:focus {
@@ -155,28 +145,28 @@ Footer {
 
 #header-meta {
     width: auto;
-    min-width: 14;
-    max-width: 50%;
+    min-width: 16;
+    max-width: 48%;
     color: #adbac7;
     content-align: right middle;
     text-align: right;
     padding: 0 1;
 }
 
-/* ── Area 2: chat fills space; progress strip hidden until agent runs ── */
-#chat-scroll {
+/* ── Chat: RichLog is the scroll surface (nested scroll broke selection) ── */
+#chat-body {
     height: 1fr;
     min-height: 10;
-    border: none;
     background: #070b10;
-    scrollbar-background: #070b10;
-    scrollbar-color: #484f58 #070b10;
-    margin: 0;
 }
 
-#log {
+#chat-body #log {
+    height: 1fr;
+    min-height: 8;
     padding: 1 2;
     width: 100%;
+    border: none;
+    background: #070b10;
 }
 
 #thinking-box {
@@ -312,18 +302,20 @@ Footer {
     padding: 0 0 1 0;
 }
 
-#activity-scroll {
+#trace-body {
     height: 1fr;
     min-height: 8;
     border: solid #2d3a4f;
     background: #0a0e14;
-    scrollbar-background: #0a0e14;
-    scrollbar-color: #484f58 #0a0e14;
 }
 
-#activity-log {
+#trace-body #activity-log {
+    height: 1fr;
+    min-height: 6;
     width: 100%;
     padding: 0 1;
+    border: none;
+    background: #0a0e14;
 }
 
 #log, #activity-log, #thinking-detail {
