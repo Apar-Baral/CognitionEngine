@@ -1,10 +1,17 @@
 """Cognition Engine REPL visual theme."""
 
 from textual.widgets import Static
+from textual.containers import VerticalScroll
 
 
 class ChromeStatic(Static):
     """Headers, hints, and rail labels — excluded from cross-pane mouse selection."""
+
+    ALLOW_SELECT = False
+
+
+class PaneScroll(VerticalScroll):
+    """Scroll container — does not participate in text selection (child RichLog still can)."""
 
     ALLOW_SELECT = False
 
@@ -123,9 +130,9 @@ Footer {
 }
 
 #header-model-line {
-    width: 1fr;
-    min-width: 10;
-    max-width: 48;
+    width: auto;
+    min-width: 8;
+    max-width: 32;
     color: #adbac7;
     content-align: left middle;
     text-align: left;
@@ -133,9 +140,9 @@ Footer {
 }
 
 #header-strip #model-select {
-    width: auto;
-    min-width: 20;
-    max-width: 34;
+    width: 1fr;
+    min-width: 22;
+    max-width: 100%;
     border: solid #388bfd;
     background: #0d1117;
     margin: 0 1;
@@ -223,6 +230,12 @@ Footer {
 }
 
 /* ── Area 3: slim prompt dock ── */
+#composer-stack {
+    height: auto;
+    min-height: 3;
+    max-height: 12;
+}
+
 #composer {
     height: 3;
     min-height: 3;
@@ -263,6 +276,23 @@ Footer {
 #input:focus {
     border: none;
     background: #0d1117;
+}
+
+#slash-suggest {
+    height: auto;
+    max-height: 6;
+    padding: 0 2 0 4;
+    color: #8b949e;
+    background: #010409;
+    border-top: solid #21262d;
+}
+
+#slash-suggest.hidden {
+    display: none;
+    height: 0;
+    max-height: 0;
+    padding: 0;
+    border: none;
 }
 
 #trace-rail {

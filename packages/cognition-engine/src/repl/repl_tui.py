@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from textual import on
+from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -46,8 +46,8 @@ from src.repl.chat_log import ChatRichLog
 from src.repl.agent_tasks import TaskBoard, ingest_activity, task_board_markup
 from src.repl.clipboard_util import save_copy_fallback
 from src.repl.response_clean import clean_assistant_text
-from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP, ChromeStatic
-from src.repl.session_bridge import SessionBridge
+from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP, ChromeStatic, PaneScroll
+from src.repl.session_bridge import SLASH_COMMANDS, SessionBridge
 from src.repl.markup_safe import escape_markup
 from src.repl.live_thinking import LiveAgentView, live_thinking_markup
 from src.repl.rail_sidebar import format_left_rail
@@ -436,6 +436,7 @@ class CognitionReplApp(App):
         lower = msg.lower()
         if "model step" in lower:
             self._live_view.stream = ""
+            self._typing_pos = 0
             self._live_view.planned = []
             sm = re.search(r"step\s+(\d+)\s*/\s*(\d+)", lower)
             if sm:
@@ -530,7 +531,7 @@ class CognitionReplApp(App):
         model_value = self._model_select_value(model_options)
         yield Header(show_clock=True)
         with Horizontal(id="workspace"):
-            with VerticalScroll(id="left-rail", can_focus=True):
+            with PaneScroll(id="left-rail", can_focus=True):
                 with Vertical(id="left-rail-inner"):
                     yield ChromeStatic(
                         format_left_rail(
@@ -558,7 +559,7 @@ class CognitionReplApp(App):
                     yield Select(
                         model_options,
                         id="model-select",
-                        prompt="Change model…",
+                        prompt="Pick model ▾",
                         value=model_value,
                     )
                     yield ChromeStatic(
@@ -566,7 +567,7 @@ class CognitionReplApp(App):
                         id="header-meta",
                         markup=True,
                     )
-                with VerticalScroll(id="chat-scroll", can_focus=True):
+                with PaneScroll(id="chat-scroll", can_focus=True):
                     yield ChatRichLog(
                         id="log",
                         highlight=True,
@@ -581,15 +582,17 @@ class CognitionReplApp(App):
                         yield ChromeStatic("", id="chat-thinking", markup=True)
                     yield ChromeStatic("", id="task-list", markup=True)
                     yield ChromeStatic("", id="thinking-detail", markup=True)
-                with Horizontal(id="composer"):
-                    yield ChromeStatic("❯", id="prompt-glyph")
-                    yield ComposerInput(
-                        placeholder="Ask anything — slash commands optional",
-                        id="input",
-                    )
+                with Vertical(id="composer-stack"):
+                    with Horizontal(id="composer"):
+                        yield ChromeStatic("❯", id="prompt-glyph")
+                        yield ComposerInput(
+                            placeholder="Ask anything — type / for commands",
+                            id="input",
+                        )
+                    yield ChromeStatic("", id="slash-suggest", markup=True, classes="hidden")
             with Vertical(id="trace-rail"):
                 yield ChromeStatic("AGENT TRACE", classes="rail-section-title")
-                with VerticalScroll(id="activity-scroll", can_focus=True):
+                with PaneScroll(id="activity-scroll", can_focus=True):
                     yield ChatRichLog(
                         id="activity-log",
                         highlight=False,
@@ -688,6 +691,9 @@ class CognitionReplApp(App):
             self.query_one("#task-list", Static).update(
                 task_board_markup(self._task_board, title="Agent")
             )
+            if self._chat_busy and self._typing_timer is not None:
+                if (self._live_view.stream or "").strip() or self._typing_pos > 0:
+                    return
             _, detail = live_thinking_markup(self._thinking_tick, self._live_view)
             self.query_one("#thinking-detail", Static).update(detail)
         except Exception:
@@ -768,7 +774,7 @@ class CognitionReplApp(App):
         self._scroll_chat_end()
 
     def _scroll_chat_end(self) -> None:
-        self.query_one("#chat-scroll", VerticalScroll).scroll_end(animate=False)
+        self.query_one("#chat-scroll", PaneScroll).scroll_end(animate=False)
 
     def _log_user(self, text: str) -> None:
         self._last_user_prompt = text
@@ -815,6 +821,34 @@ class CognitionReplApp(App):
         self._typing_timer = self.set_interval(0.018, self._typing_tick)
 
     def _typing_tick(self) -> None:
+        if self._chat_busy:
+            src = self._live_view.stream
+            low = src.lower()
+            if "dsml" in low or "<|" in src:
+                return
+            if not src.strip():
+                return
+            step = max(2, min(80, max(len(src) // 20, 4)))
+            self._typing_pos = min(len(src), self._typing_pos + step)
+            partial = src[: self._typing_pos]
+            display = escape_markup(partial.replace("\n", " "))
+            if len(display) > 220:
+                display = "…" + display[-220:]
+            try:
+                self.query_one("#thinking-detail", Static).update(
+                    f"[bold #58a6ff]╭─ Response (streaming) ─────────╮[/]\n"
+                    f"[bold #58a6ff]│[/] [#79c0ff]{display}[/][bold #79c0ff]▌[/]\n"
+                    f"[bold #58a6ff]╰────────────────────────────────╯[/]"
+                )
+                self.query_one("#chat-scroll", PaneScroll).scroll_end(animate=False)
+            except Exception:
+                pass
+            return
+        if not self._typing_full:
+            if self._typing_timer is not None:
+                self._typing_timer.stop()
+                self._typing_timer = None
+            return
         if self._typing_pos >= len(self._typing_full):
             if self._typing_timer is not None:
                 self._typing_timer.stop()
@@ -834,7 +868,7 @@ class CognitionReplApp(App):
             f"[bold #58a6ff]│[/] [#79c0ff]{display}[/][bold #79c0ff]▌[/]\n"
             f"[bold #58a6ff]╰────────────────────────────────╯[/]"
         )
-        self.query_one("#chat-scroll", VerticalScroll).scroll_end(animate=False)
+        self.query_one("#chat-scroll", PaneScroll).scroll_end(animate=False)
 
     def _log_system(self, text: str) -> None:
         self._log(f"[dim]· {text}[/]")
@@ -877,7 +911,7 @@ class CognitionReplApp(App):
         else:
             composer.remove_class("-busy")
             chat_input.disabled = False
-            chat_input.placeholder = "Ask anything — slash commands optional"
+            chat_input.placeholder = "Ask anything — type / for commands"
 
     def _collapse_agent_progress(self) -> None:
         try:
@@ -900,10 +934,20 @@ class CognitionReplApp(App):
         if self._thinking_timer is not None:
             self._thinking_timer.stop()
         self._thinking_timer = self.set_interval(0.1, self._tick_thinking)
+        self._typing_pos = 0
+        if self._typing_timer is not None:
+            self._typing_timer.stop()
+        self._typing_timer = self.set_interval(0.022, self._typing_tick)
 
     def _tick_thinking(self) -> None:
         self._thinking_tick += 1
         self._update_thinking_box()
+
+    def _stop_agent_thinking_only(self) -> None:
+        """Stop the agent spinner timer only; keep thinking box for reply typing."""
+        if self._thinking_timer is not None:
+            self._thinking_timer.stop()
+            self._thinking_timer = None
 
     def _hide_thinking_ui(self) -> None:
         if self._thinking_timer is not None:
@@ -1095,23 +1139,50 @@ class CognitionReplApp(App):
             return
         if event.state not in (WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED):
             return
-        self._stop_thinking()
-        self._set_chat_busy(False)
+        self._stop_agent_thinking_only()
         if event.state == WorkerState.CANCELLED:
+            if self._typing_timer is not None:
+                self._typing_timer.stop()
+                self._typing_timer = None
+            self._set_chat_busy(False)
+            self._hide_thinking_ui()
             self._log_system("Request cancelled.")
             self.query_one("#input", Input).focus()
             return
         if event.state == WorkerState.ERROR:
+            if self._typing_timer is not None:
+                self._typing_timer.stop()
+                self._typing_timer = None
+            self._set_chat_busy(False)
+            self._hide_thinking_ui()
             err = event.worker.error
             self._log_assistant(f"[red]Error[/]\n{err}")
             self.query_one("#input", Input).focus()
             return
         result: ChatJobResult = event.worker.result
+        if self._typing_timer is not None:
+            self._typing_timer.stop()
+            self._typing_timer = None
+        self._set_chat_busy(False)
         if result.kind == "ok":
-            self._log_assistant_typing(result.payload)
+            p = result.payload or ""
+            clean = clean_assistant_text(p) or p.strip()
+            self._last_assistant_plain = clean or p
+            if (self._last_assistant_plain or "").strip():
+                save_copy_fallback(self._last_assistant_plain)
+            streamed = bool((self._live_view.stream or "").strip())
+            if streamed and (self._last_assistant_plain or "").strip():
+                self._log_assistant(self._last_assistant_plain)
+                self._hide_thinking_ui()
+            elif (self._last_assistant_plain or "").strip():
+                self._log_assistant_typing(p)
+            else:
+                self._hide_thinking_ui()
+                self._log_system("(empty reply)")
         elif result.kind == "error":
             self._log_assistant_typing(f"[red]{result.payload}[/]")
         elif result.kind == "no_agent":
+            self._hide_thinking_ui()
             self._log_system(
                 "Chat needs an API key. Click [bold]Setup keys[/] or type /keys"
             )
@@ -1189,20 +1260,64 @@ class CognitionReplApp(App):
         finally:
             self._select_syncing = False
 
+    def _slash_matches(self, value: str) -> list[str]:
+        if not value.lstrip().startswith("/"):
+            return []
+        tok = value.lstrip().split(maxsplit=1)[0].lower()
+        return [c for c in SLASH_COMMANDS if c.startswith(tok)][:18]
+
+    def _refresh_slash_suggest(self, value: str) -> None:
+        try:
+            sug = self.query_one("#slash-suggest", ChromeStatic)
+        except Exception:
+            return
+        m = self._slash_matches(value)
+        if not m:
+            sug.add_class("hidden")
+            sug.update("")
+            return
+        sug.remove_class("hidden")
+        sug.update("[dim]" + "   ".join(m) + "[/]")
+
+    @on(Input.Changed, "#input")
+    def _on_input_prompt_changed(self, event: Input.Changed) -> None:
+        self._refresh_slash_suggest(event.value)
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key != "tab":
+            return
+        w = self.focused
+        if w is None or getattr(w, "id", None) != "input":
+            return
+        inp = self.query_one("#input", Input)
+        m = self._slash_matches(inp.value)
+        if not m:
+            return
+        prefix = inp.value.split(maxsplit=1)[0] if inp.value.strip() else "/"
+        if not prefix.startswith("/"):
+            return
+        pick = m[0]
+        tail = inp.value[len(prefix) :]
+        inp.value = pick + tail
+        plen = len(pick)
+        inp.cursor_position = plen if tail else min(plen + 1, len(inp.value))
+        self._refresh_slash_suggest(inp.value)
+        event.stop()
+
     def action_clear_log(self) -> None:
         self.query_one("#log", ChatRichLog).clear()
 
     def _scroll_target(self) -> VerticalScroll:
         w = self.focused
-        if isinstance(w, VerticalScroll):
+        if isinstance(w, (VerticalScroll, PaneScroll)):
             return w
         if isinstance(w, ChatRichLog):
             parent = w.parent
             while parent is not None:
-                if isinstance(parent, VerticalScroll):
+                if isinstance(parent, (VerticalScroll, PaneScroll)):
                     return parent
                 parent = getattr(parent, "parent", None)
-        return self.query_one("#chat-scroll", VerticalScroll)
+        return self.query_one("#chat-scroll", PaneScroll)
 
     def action_scroll_up(self) -> None:
         self._scroll_target().scroll_up(animate=False)
@@ -1214,6 +1329,10 @@ class CognitionReplApp(App):
         self.action_confirm_quit()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
+        try:
+            self.query_one("#slash-suggest", ChromeStatic).add_class("hidden")
+        except Exception:
+            pass
         line = event.value.strip()
         if self._chat_busy:
             self._log_system("[yellow]Still working — Esc to cancel, then type again.[/]")

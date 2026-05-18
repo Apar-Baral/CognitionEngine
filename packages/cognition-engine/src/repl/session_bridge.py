@@ -93,7 +93,7 @@ class SessionBridge:
 
     def cmd_model(self, model_id: str) -> str:
         if not model_id.strip():
-            return "Use the model dropdown (left) or Ctrl+M to search."
+            return "Use the model dropdown in the top bar or Ctrl+M to search."
         from src.cli.model_picker import apply_model_choice
 
         return apply_model_choice(self.ctx, model_id.strip())
@@ -392,3 +392,32 @@ class SessionBridge:
                 return f"Unknown command {cmd}. Did you mean {guess[0]}?"
             return f"Unknown command {cmd}. Try /help"
         return fn()
+
+
+SLASH_COMMANDS: tuple[str, ...] = (
+    "/?",
+    "/bootstrap",
+    "/budget",
+    "/cd",
+    "/chat",
+    "/commit",
+    "/end",
+    "/exit",
+    "/goal",
+    "/h",
+    "/help",
+    "/keys",
+    "/memory",
+    "/model",
+    "/models",
+    "/plan",
+    "/project",
+    "/quit",
+    "/rl",
+    "/setup",
+    "/shield",
+    "/show-plan",
+    "/showplan",
+    "/start",
+    "/status",
+)
