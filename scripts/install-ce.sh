@@ -87,20 +87,27 @@ sync_source_from_zip() {
 fetch_source_zip_full() {
   safe_cd_out_of_install_root
   local tmpdir src venv_bak=""
-  tmpdir="$(mktemp -d)"
-  src="$(download_zip_tree)"
-  # download_zip_tree uses its own tmp; src is inside it — reorganize
   if [ -d "$VENV" ]; then
     echo "==> Backing up .venv..."
     venv_bak="$(mktemp -d)"
     cp -a "$VENV" "$venv_bak/.venv"
   fi
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$tmpdir"' EXIT
+  echo "==> Downloading latest CognitionEngine (zip)..."
+  curl -fsSL "$ZIP_URL" -o "$tmpdir/ce.zip"
+  unzip -q "$tmpdir/ce.zip" -d "$tmpdir"
+  src="$tmpdir/CognitionEngine-master"
+  if [ ! -d "$src" ]; then
+    echo "ERROR: Bad zip from GitHub"
+    exit 1
+  fi
   safe_cd_out_of_install_root
   rm -rf "$INSTALL_ROOT"
   mkdir -p "$(dirname "$INSTALL_ROOT")"
   mv "$src" "$INSTALL_ROOT"
-  # clean parent of moved dir
-  rm -rf "$(dirname "$src")" 2>/dev/null || true
+  trap - EXIT
+  rm -rf "$tmpdir"
   if [ -n "$venv_bak" ] && [ -d "$venv_bak/.venv" ]; then
     mkdir -p "$PKG_DIR"
     cp -a "$venv_bak/.venv" "$VENV"
