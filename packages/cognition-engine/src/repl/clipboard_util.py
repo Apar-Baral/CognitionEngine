@@ -5,6 +5,16 @@ from __future__ import annotations
 import platform
 import shutil
 import subprocess
+from pathlib import Path
+
+
+def save_copy_fallback(text: str) -> Path:
+    from pathlib import Path
+
+    path = Path("~/.cognition/last_reply.txt").expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
 
 
 def copy_to_clipboard(text: str) -> tuple[bool, str]:

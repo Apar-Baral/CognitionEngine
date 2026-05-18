@@ -4,7 +4,8 @@ from __future__ import annotations
 
 CE_TIPS: list[str] = [
     "Press Ctrl+M to search all models quickly.",
-    "Ctrl+Shift+C copies the last assistant reply to clipboard.",
+    "Copy reply button or Ctrl+Shift+C — also saves ~/.cognition/last_reply.txt.",
+    "Click the chat log, drag to select text, then Ctrl+Shift+C.",
     "Use /shield to see hallucination prevention status.",
     "Use /showplan to print the 24-phase master plan in chat.",
     "Setup keys stores DeepSeek under DEEPSEEK — not OpenAI.",

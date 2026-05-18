@@ -184,7 +184,38 @@ Footer {
     text-style: italic;
 }
 
+#thinking-row {
+    display: none;
+    height: 7;
+    min-height: 7;
+    max-height: 9;
+    border: solid #6cb6ff;
+    background: #0d1520;
+    margin-bottom: 1;
+    padding: 0 1;
+}
+
+#thinking-row.visible {
+    display: horizontal;
+}
+
+#think-spinner {
+    width: 5;
+    min-width: 5;
+    height: 100%;
+    content-align: center middle;
+}
+
+#chat-thinking {
+    width: 1fr;
+    height: 100%;
+    padding: 0 1;
+    color: #6cb6ff;
+    content-align: left middle;
+}
+
 #thinking-bar {
+    display: none;
     height: 2;
     min-height: 2;
     padding: 0 2;
@@ -192,35 +223,11 @@ Footer {
     border-bottom: solid #6cb6ff;
     color: #6cb6ff;
     text-style: bold;
-}
-
-#chat-thinking {
-    height: auto;
-    min-height: 1;
-    max-height: 8;
-    background: #0a0e14;
-    border: solid #2d3a4f;
-    padding: 0 1;
     margin-bottom: 1;
-    color: #6cb6ff;
 }
 
-#chat-thinking:empty {
-    display: none;
-}
-
-#chat-thinking.-active {
-    min-height: 6;
-    max-height: 10;
-    background: #0d1520;
-    border: solid #6cb6ff;
-    padding: 0 1;
-}
-
-#thinking-bar.-active {
-    min-height: 2;
-    background: #152238;
-    border-bottom: solid #6cb6ff;
+#thinking-bar.visible {
+    display: block;
 }
 
 #tracker-panel {
@@ -250,10 +257,6 @@ Footer {
     margin: 1 0 0 0;
     scrollbar-background: #070b10;
     scrollbar-color: #3d5a80;
-}
-
-#thinking-bar:empty {
-    display: none;
 }
 
 #log {

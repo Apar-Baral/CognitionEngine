@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from textual.widgets import (
     Label,
     ListItem,
     ListView,
+    LoadingIndicator,
     RichLog,
     Select,
     Static,
@@ -38,18 +40,14 @@ from src.cli.setup_summary import (
     load_last_setup,
     load_project_setup_summary,
 )
-from src.repl.clipboard_util import copy_to_clipboard
+from src.repl.chat_log import ChatRichLog
+from src.repl.clipboard_util import copy_to_clipboard, save_copy_fallback
 from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP
 from src.repl.session_bridge import SessionBridge
 from src.repl.thinking_anim import thinking_panel_markup, thinking_trace_line
 from src.repl.tips import CE_TIPS
 from src.repl.trace_viz import trace_lane_markup
 
-
-class CopyableRichLog(RichLog):
-    """RichLog with terminal text selection enabled where supported."""
-
-    ALLOW_SELECT = True
 
 COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-model", "Change model", "primary"),
@@ -59,6 +57,7 @@ COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-shield", "Shield info", ""),
     ("btn-status", "Track progress", ""),
     ("btn-end", "End session", ""),
+    ("btn-copy", "Copy reply", "primary"),
     ("btn-setup", "Setup keys", "primary"),
     ("btn-quit", "Exit CE", "danger"),
 ]
@@ -270,7 +269,7 @@ class QuickSetupScreen(ModalScreen[bool]):
 class CognitionReplApp(App):
     """Professional agent console — no /help required."""
 
-    ENABLE_TEXT_SELECTION = True
+    ALLOW_SELECT = True
 
     TITLE = "Cognition Engine"
     SUB_TITLE = "Agent console"
@@ -283,6 +282,8 @@ class CognitionReplApp(App):
         Binding("ctrl+s", "action_start", "Start", show=True),
         Binding("ctrl+e", "prompt_end", "End", show=True),
         Binding("ctrl+shift+c", "copy_last_reply", "Copy", show=True),
+        Binding("ctrl+y", "copy_last_reply", "Copy", show=False),
+        Binding("ctrl+shift+a", "copy_chat_log", "Copy all", show=False),
         Binding("ctrl+l", "clear_log", "Clear", show=False),
         Binding("pageup", "scroll_up", "▲", show=False),
         Binding("pagedown", "scroll_down", "▼", show=False),
@@ -311,6 +312,7 @@ class CognitionReplApp(App):
         self._typing_timer: Timer | None = None
         self._typing_full = ""
         self._typing_pos = 0
+        self._thinking_min_until = 0.0
 
     def _build_agent(self):
         try:
@@ -412,14 +414,16 @@ class CognitionReplApp(App):
                 yield Static(self._top_bar_text(), id="top-bar", markup=True)
                 yield Static(self._token_bar_text(), id="token-bar", markup=True)
                 yield Static(self._tracker_text(), id="tracker-panel", markup=True)
-                yield Static("", id="chat-thinking", markup=True)
+                with Horizontal(id="thinking-row"):
+                    yield LoadingIndicator(id="think-spinner")
+                    yield Static("", id="chat-thinking", markup=True)
                 yield Static(
                     "[dim]Your message appears below when you send[/]",
                     id="prompt-display",
                     markup=True,
                 )
                 with VerticalScroll(id="chat-scroll", can_focus=True):
-                    yield CopyableRichLog(
+                    yield ChatRichLog(
                         id="log",
                         highlight=True,
                         markup=True,
@@ -436,7 +440,7 @@ class CognitionReplApp(App):
                 yield Static("AGENT TRACE", classes="rail-section-title")
                 yield Static("", id="thinking-bar", markup=True)
                 with VerticalScroll(id="activity-scroll", can_focus=True):
-                    yield CopyableRichLog(
+                    yield ChatRichLog(
                         id="activity-log",
                         highlight=False,
                         markup=True,
@@ -444,7 +448,7 @@ class CognitionReplApp(App):
                         auto_scroll=True,
                     )
                 yield Static(
-                    "[dim]Shift+drag select · Ctrl+Shift+C copies last reply[/]",
+                    "[dim]Click chat · drag to select · Ctrl+Shift+C or Copy reply button[/]",
                     id="trace-hint",
                     markup=True,
                 )
@@ -601,9 +605,7 @@ class CognitionReplApp(App):
 
     def _clear_chat_thinking(self) -> None:
         try:
-            panel = self.query_one("#chat-thinking", Static)
-            panel.update("")
-            panel.remove_class("-active")
+            self.query_one("#chat-thinking", Static).update("")
         except Exception:
             pass
 
@@ -683,12 +685,17 @@ class CognitionReplApp(App):
 
     def _start_thinking(self) -> None:
         self._thinking_tick = 0
-        self.query_one("#chat-thinking", Static).add_class("-active")
-        self.query_one("#thinking-bar", Static).add_class("-active")
+        self._thinking_min_until = time.monotonic() + 1.2
+        row = self.query_one("#thinking-row", Horizontal)
+        row.add_class("visible")
+        self.query_one("#thinking-bar", Static).add_class("visible")
         self._tick_thinking()
+        self._log(
+            "[bold #6cb6ff]▸ Agent working[/] [dim]— spinner + panel below · Esc to cancel[/]"
+        )
         if self._thinking_timer is not None:
             self._thinking_timer.stop()
-        self._thinking_timer = self.set_interval(0.12, self._tick_thinking)
+        self._thinking_timer = self.set_interval(0.1, self._tick_thinking)
 
     def _tick_thinking(self) -> None:
         self._thinking_tick += 1
@@ -697,18 +704,29 @@ class CognitionReplApp(App):
         self.query_one("#chat-thinking", Static).update(panel)
         self.query_one("#thinking-bar", Static).update(trace)
 
-    def _stop_thinking(self) -> None:
+    def _hide_thinking_ui(self) -> None:
         if self._thinking_timer is not None:
             self._thinking_timer.stop()
             self._thinking_timer = None
         try:
+            self.query_one("#thinking-row", Horizontal).remove_class("visible")
+        except Exception:
+            pass
+        try:
             bar = self.query_one("#thinking-bar", Static)
             bar.update("")
-            bar.remove_class("-active")
+            bar.remove_class("visible")
         except Exception:
             pass
         if not self._typing_timer:
             self._clear_chat_thinking()
+
+    def _stop_thinking(self) -> None:
+        if time.monotonic() < self._thinking_min_until:
+            delay = self._thinking_min_until - time.monotonic()
+            self.set_timer(delay, self._hide_thinking_ui)
+            return
+        self._hide_thinking_ui()
 
     def _chat_sync(self, line: str) -> ChatJobResult:
         if not self._agent:
@@ -834,6 +852,8 @@ class CognitionReplApp(App):
         elif bid == "btn-end":
             if self._require_project("End session"):
                 self.action_prompt_end()
+        elif bid == "btn-copy":
+            self.action_copy_last_reply()
         elif bid == "btn-setup":
             self.action_open_setup()
         elif bid == "btn-quit":
@@ -964,13 +984,51 @@ class CognitionReplApp(App):
         finally:
             self._select_syncing = False
 
-    def action_copy_last_reply(self) -> None:
-        text = self._last_assistant_plain.strip()
+    def _copy_text(self, text: str, *, label: str) -> None:
+        text = text.strip()
         if not text:
-            self._log_system("No assistant reply to copy yet.")
+            self.notify(f"No {label} to copy", severity="warning", timeout=3)
             return
-        ok, msg = copy_to_clipboard(text)
-        self._log_system(f"{'[green]✓[/] ' if ok else '[yellow]'} {msg}")
+        path = save_copy_fallback(text)
+        copied = False
+        try:
+            self.copy_to_clipboard(text)
+            copied = True
+        except Exception:
+            ok, _msg = copy_to_clipboard(text)
+            copied = ok
+        if copied:
+            self.notify(
+                f"Copied {label} to clipboard",
+                title="Copy",
+                severity="information",
+                timeout=3,
+            )
+        else:
+            self.notify(
+                f"Saved to {path} — open that file to copy",
+                title="Copy fallback",
+                severity="warning",
+                timeout=5,
+            )
+        self._log_system(
+            f"[green]✓[/] {label} → "
+            f"{'clipboard' if copied else str(path)}"
+        )
+
+    def action_copy_last_reply(self) -> None:
+        self._copy_text(self._last_assistant_plain, label="last reply")
+
+    def action_copy_chat_log(self) -> None:
+        log = self.query_one("#log", ChatRichLog)
+        self._copy_text(log.plain_text(), label="chat log")
+
+    def action_copy_selection(self) -> None:
+        selected = self.screen.get_selected_text()
+        if selected:
+            self._copy_text(selected, label="selection")
+        else:
+            self.action_copy_last_reply()
 
     def action_clear_log(self) -> None:
         self.query_one("#log", RichLog).clear()
@@ -1021,8 +1079,11 @@ class CognitionReplApp(App):
                 )
                 self._refresh_chrome(sync_select=False)
                 return
-            if cmd == "/copy":
+            if cmd in ("/copy", "/clipboard"):
                 self.action_copy_last_reply()
+                return
+            if cmd == "/copyall":
+                self.action_copy_chat_log()
                 return
             self._log_user(line)
             result = self.bridge.dispatch(line)

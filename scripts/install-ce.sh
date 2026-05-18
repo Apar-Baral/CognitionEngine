@@ -271,6 +271,12 @@ echo "$INSTALLED_VER"
 if ! grep -q "def run_chat" "$PKG_DIR/src/repl/repl_tui.py" 2>/dev/null; then
   echo "WARNING: source may be stale — re-run from ~ with: CE_REFRESH=1 curl -fsSL .../install-ce.sh | bash"
 fi
+if ! grep -q 'id="thinking-row"' "$PKG_DIR/src/repl/repl_tui.py" 2>/dev/null; then
+  echo "WARNING: TUI missing thinking animation — CE_REFRESH=1 install from ~"
+fi
+if ! grep -q "class ChatRichLog" "$PKG_DIR/src/repl/chat_log.py" 2>/dev/null; then
+  echo "WARNING: TUI missing copy support — CE_REFRESH=1 install from ~"
+fi
 if source_has_stale_tui_css; then
   echo "WARNING: invalid TUI CSS still present — re-run installer from ~ (not git pull)"
 fi
