@@ -270,11 +270,20 @@ class SessionBridge:
         )
 
     def cmd_setup(self) -> str:
-        from src.cli.interactive_setup import run_quick_setup_in_terminal
+        """Init .cognition only — model/keys use TUI Setup keys or `cognition-engine setup`."""
+        if self.ctx.is_initialized():
+            return (
+                "Project already initialized.\n"
+                "Set model & API keys: use [bold]Setup keys[/] in the UI, or run:\n"
+                "  cognition-engine setup\n"
+                "  export ANTHROPIC_API_KEY=...  (match your model provider)"
+            )
+        from src.cli.git_helpers import write_project_gitignore
 
-        run_quick_setup_in_terminal(self.root)
+        self.ctx.init_project()
+        write_project_gitignore(self.root)
         self.use_project(self.root)
-        return "Setup complete."
+        return f"Initialized CE at {self.root}. Next: Setup keys (UI) or cognition-engine setup"
 
     def dispatch(self, line: str) -> str:
         line = line.strip()

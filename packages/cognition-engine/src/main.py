@@ -38,8 +38,16 @@ def main() -> None:
 
         root = resolve_project_root()
         if needs_quick_setup() and os.environ.get("CE_SKIP_SETUP") != "1":
-            hermes_quick_setup(root, ask_keys=True, ask_model=True, init_project=False)
-        os.environ["CE_SETUP_DONE"] = "1"
+            # Rich prompts break inside Textual — defer to in-UI setup screen.
+            defer_to_tui = (
+                os.environ.get("CE_SIMPLE_REPL") != "1"
+                and sys.stdin.isatty()
+            )
+            if not defer_to_tui:
+                hermes_quick_setup(root, ask_keys=True, ask_model=True, init_project=False)
+                os.environ["CE_SETUP_DONE"] = "1"
+        else:
+            os.environ["CE_SETUP_DONE"] = "1"
         run_repl_textual()
         return
     try:

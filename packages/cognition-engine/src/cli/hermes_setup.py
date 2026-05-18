@@ -84,17 +84,87 @@ def _has_key_for_provider(keys: dict[str, str], provider: str) -> bool:
 
 
 def needs_quick_setup() -> bool:
-    """True when we should run the in-terminal setup wizard."""
+    """True when model or provider API key is missing."""
     data = _load_global()
-    if not _merged_keys(data):
-        return True
     if not data.get("default_model"):
+        return True
+    keys = _merged_keys(data)
+    if not keys:
+        return True
+    model_id = str(data.get("default_model"))
+    provider = _provider_for_model(model_id)
+    if not _has_key_for_provider(keys, provider):
         return True
     return False
 
 
 def needs_api_keys() -> bool:
     return not bool(_merged_keys(_load_global()))
+
+
+def persist_setup_choices(
+    model_id: str,
+    *,
+    api_key: str | None = None,
+    project_root: Path | None = None,
+    init_project: bool = True,
+) -> dict[str, Any]:
+    """Save model + optional API key to global config and init project (no Rich prompts)."""
+    from src.cli.model_picker import resolve_model_id
+
+    ensure_models_yaml()
+    data = _load_global()
+    if not data:
+        data = {
+            "default_model": "claude-haiku-20240307",
+            "shield_sensitivity": "medium",
+            "api_keys": {},
+            "git": {"auto_commit": False, "auto_commit_message_prefix": "ce:"},
+        }
+
+    reg = DynamicRegistry(ensure_models_yaml())
+    mid = resolve_model_id(model_id, reg) or model_id.strip()
+    provider = _provider_for_model(mid)
+    file_keys = dict(data.get("api_keys") or {})
+    if api_key and api_key.strip():
+        file_keys[provider] = api_key.strip()
+        if provider == "openai_compatible":
+            file_keys.setdefault("openai", api_key.strip())
+    data["api_keys"] = file_keys
+    data["default_model"] = mid
+    _save_global(data)
+
+    root = (project_root or Path.cwd()).resolve()
+    ctx = ProjectContext(root)
+    if init_project and not ctx.is_initialized():
+        ctx.init_project()
+        write_project_gitignore(root)
+        cfg = root / ".cognition" / "config.yaml"
+        if not cfg.is_file():
+            cfg.parent.mkdir(parents=True, exist_ok=True)
+            cfg.write_text(
+                yaml.safe_dump(
+                    {
+                        "default_model": mid,
+                        "git": {"auto_commit": True, "auto_commit_message_prefix": "ce:"},
+                    },
+                    default_flow_style=False,
+                ),
+                encoding="utf-8",
+            )
+    else:
+        ctx.config.update("default_model", mid, persist=True)
+
+    summary = {
+        "default_model": mid,
+        "project_path": str(root),
+        "api_keys_configured": list(_merged_keys(data).keys()),
+        "install_type": "slim",
+        "git_initialized": is_git_repo(root),
+    }
+    save_last_setup(summary)
+    save_project_setup_summary(root, summary)
+    return summary
 
 
 def hermes_quick_setup(

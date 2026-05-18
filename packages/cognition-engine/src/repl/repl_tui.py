@@ -44,12 +44,12 @@ COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-plan", "Generate plan", ""),
     ("btn-end", "End session", ""),
     ("btn-commit", "Git commit", ""),
-    ("btn-setup", "Setup project", ""),
+    ("btn-setup", "Setup keys", "primary"),
 ]
 
 COMMAND_HINTS = """[dim]Chat:[/] type message + Enter
-[dim]Keys:[/] Ctrl+M search models · PgUp/Dn scroll
-[dim]End session:[/] use button — prompts in chat"""
+[dim]Setup:[/] Setup keys button · /keys status
+[dim]Models:[/] Ctrl+M · PgUp/Dn scroll chat"""
 
 
 class ModelPickerScreen(ModalScreen[str | None]):
@@ -134,6 +134,94 @@ class ModelPickerScreen(ModalScreen[str | None]):
                 self.dismiss(self._entries[n][0])
 
 
+class QuickSetupScreen(ModalScreen[bool]):
+    """Model + API key setup inside Textual (no Rich terminal prompts)."""
+
+    DEFAULT_CSS = """
+    QuickSetupScreen { align: center middle; }
+    #setup-frame {
+        width: 88; max-width: 96; height: auto;
+        background: #111820; border: solid #6cb6ff; padding: 1 2;
+    }
+    #setup-api-key { margin: 1 0; border: solid #3d5a80; background: #0a0e14; }
+    #setup-actions { height: auto; margin-top: 1; }
+    #setup-actions Button { margin-right: 1; }
+    """
+
+    def __init__(self, bridge: SessionBridge) -> None:
+        super().__init__()
+        self.bridge = bridge
+        self._model_id = str(bridge.ctx.config.get("default_model", ""))
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="setup-frame"):
+            yield Static("[bold #6cb6ff]Setup — model & API key[/]", id="setup-title")
+            yield Static("", id="setup-model-line", markup=True)
+            yield Button("Choose model…", id="setup-pick-model")
+            yield Static("", id="setup-provider-hint", markup=True)
+            yield Input(
+                placeholder="Paste API key (blank if already in env)",
+                id="setup-api-key",
+                password=True,
+            )
+            with Horizontal(id="setup-actions"):
+                yield Button("Save", id="setup-save", variant="primary")
+                yield Button("Later", id="setup-skip")
+
+    def on_mount(self) -> None:
+        self._refresh_model_line()
+        self.query_one("#setup-api-key", Input).focus()
+
+    def _refresh_model_line(self) -> None:
+        from src.cli.hermes_setup import _ENV_KEYS, _PROVIDER_LABELS
+        from src.cli.model_picker import resolve_model_id
+
+        reg = self.bridge.ctx.model_registry()
+        mid = resolve_model_id(self._model_id, reg) or self._model_id or "claude-haiku-20240307"
+        self._model_id = mid
+        meta = reg.get_model(mid) or {}
+        name = meta.get("display_name") or mid
+        prov = str(meta.get("provider") or "openai")
+        self.query_one("#setup-model-line", Static).update(
+            f"Model: [cyan]{name}[/] [dim]({mid})[/]"
+        )
+        label = _PROVIDER_LABELS.get(prov, prov)
+        env_var = _ENV_KEYS.get(prov, "OPENAI_API_KEY")
+        self.query_one("#setup-provider-hint", Static).update(
+            f"[dim]API key for {label} · or export {env_var}[/]"
+        )
+
+    @on(Button.Pressed, "#setup-pick-model")
+    def _pick_model(self, _event: Button.Pressed) -> None:
+        self.app.push_screen(ModelPickerScreen(self.bridge), self._on_model_picked)
+
+    def _on_model_picked(self, model_id: str | None) -> None:
+        if model_id:
+            self._model_id = model_id
+            self._refresh_model_line()
+
+    @on(Button.Pressed, "#setup-save")
+    def _save(self, _event: Button.Pressed) -> None:
+        from src.cli.hermes_setup import persist_setup_choices
+
+        key = self.query_one("#setup-api-key", Input).value.strip()
+        persist_setup_choices(
+            self._model_id,
+            api_key=key or None,
+            project_root=self.bridge.root,
+            init_project=True,
+        )
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#setup-skip")
+    def _skip(self, _event: Button.Pressed) -> None:
+        self.dismiss(False)
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            self.dismiss(False)
+
+
 class CognitionReplApp(App):
     """Professional agent console — no /help required."""
 
@@ -167,15 +255,8 @@ class CognitionReplApp(App):
             return None
 
     def _try_bind_last_project(self) -> None:
-        if self.bridge.ctx.is_initialized():
-            return
-        last = load_last_setup().get("project_path")
-        if not last:
-            return
-        target = Path(str(last)).expanduser().resolve()
-        if (target / ".cognition" / "dna.json").is_file():
-            self.bridge.use_project(target)
-            self._agent = self._build_agent()
+        """Do not auto-switch to a different directory than cwd (avoids surprise project context)."""
+        return
 
     def _require_project(self, action: str = "This action") -> bool:
         if self.bridge.ctx.is_initialized():
@@ -312,24 +393,58 @@ class CognitionReplApp(App):
         log = self.query_one(RichLog)
         log.write("[bold #6cb6ff]Cognition Engine[/] ready")
         log.write(
-            "[dim]Use the left panel — pick a model from the dropdown or press[/] "
-            "[bold]Change model[/][dim] to search. Buttons run actions; no /help needed.[/]"
+            "[dim]Left panel:[/] [bold]Setup keys[/] · model dropdown · [bold]Change model[/] to search"
         )
         if self.bridge.ctx.is_initialized():
             log.write(f"[dim]Project:[/] {self.bridge.root}")
-            boot = self.bridge.get_bootstrap_text()
-            if boot and not boot.startswith("Project not"):
-                snippet = boot[:900] + "\n[dim]…[/]" if len(boot) > 900 else boot
-                log.write(snippet)
+            goal = (self.bridge.ctx.get_project_goal() or "").strip()
+            if goal:
+                preview = goal if len(goal) <= 160 else goal[:157] + "…"
+                log.write(f"[dim]Goal:[/] {preview}")
+            log.write(
+                "[dim]Session context:[/] /start then /bootstrap — not shown here by default"
+            )
         else:
             last = load_last_setup().get("project_path")
-            if last:
+            if last and Path(str(last)).expanduser().resolve() != self.bridge.root.resolve():
                 log.write(
-                    f"[yellow]No project here.[/] [dim]Use[/] /project {last} "
-                    f"[dim]or[/] cd {last}"
+                    f"[yellow]No CE project in this folder.[/] [dim]Last project:[/] {last}\n"
+                    f"[dim]Use[/] /project {last} [dim]or[/] cd there, then [bold]Setup keys[/]"
                 )
             else:
-                log.write("[yellow]Tip:[/] click [bold]Setup project[/] or: cognition-engine setup")
+                log.write("[yellow]Tip:[/] click [bold]Setup keys[/] or: cognition-engine setup")
+        self._maybe_open_setup()
+
+    def _maybe_open_setup(self) -> None:
+        import os
+
+        from src.cli.hermes_setup import needs_quick_setup
+
+        if os.environ.get("CE_SKIP_SETUP") == "1":
+            return
+        if needs_quick_setup():
+            self.call_after_refresh(self.action_open_setup)
+
+    def action_open_setup(self) -> None:
+        self.push_screen(QuickSetupScreen(self.bridge), self._on_setup_done)
+
+    def _on_setup_done(self, saved: bool | None) -> None:
+        import os
+
+        if saved:
+            os.environ["CE_SETUP_DONE"] = "1"
+            self._active_model_id = str(self.bridge.ctx.config.get("default_model", ""))
+            self._agent = self._build_agent()
+            self._refresh_chrome(sync_select=True)
+            self._log("[green]✓[/] Model and API key saved. You can chat now.")
+        else:
+            from src.cli.hermes_setup import needs_quick_setup
+
+            if needs_quick_setup():
+                self._log(
+                    "[yellow]Setup skipped.[/] Click [bold]Setup keys[/] or export an API key "
+                    "(e.g. ANTHROPIC_API_KEY). [dim]/keys[/] shows status."
+                )
 
     @on(Select.Changed, "#model-select")
     def _on_model_dropdown(self, event: Select.Changed) -> None:
@@ -357,8 +472,7 @@ class CognitionReplApp(App):
             if self._require_project("Git commit"):
                 self._prompt_commit()
         elif bid == "btn-setup":
-            self._run_bridge(lambda: self.bridge.cmd_setup())
-            self._agent = self._build_agent()
+            self.action_open_setup()
 
     def _run_bridge(self, fn) -> None:
         try:
@@ -439,11 +553,14 @@ class CognitionReplApp(App):
             if cmd in ("/model", "/models") and cmd == "/model" and line.strip().lower() == "/model":
                 self.action_pick_model()
                 return
+            if cmd == "/setup":
+                self.action_open_setup()
+                return
             result = self.bridge.dispatch(line)
             if result == "__EXIT__":
                 self.exit()
                 return
-            if line.split(maxsplit=1)[0].lower() in ("/project", "/cd", "/setup"):
+            if line.split(maxsplit=1)[0].lower() in ("/project", "/cd"):
                 self._agent = self._build_agent()
             if result:
                 if cmd == "/models":
@@ -461,5 +578,7 @@ class CognitionReplApp(App):
             except Exception as exc:
                 self._log(f"[red]Error: {exc}[/]")
         else:
-            self._log("[yellow]Add API keys in ~/.cognition/config.yaml[/] — buttons still work for planning/git")
+            self._log(
+                "[yellow]Chat needs an API key.[/] Click [bold]Setup keys[/] or type /keys"
+            )
         self._refresh_chrome(sync_select=False)

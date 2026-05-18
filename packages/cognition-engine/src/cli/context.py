@@ -38,7 +38,7 @@ def _has_project_dna(path: Path) -> bool:
 
 
 def resolve_project_root(start: Path | None = None) -> Path:
-    """Resolve CE project: COGNITION_PROJECT, last setup path, walk cwd; else cwd."""
+    """Resolve CE project: COGNITION_PROJECT, walk cwd, then last setup path; else cwd."""
     import os
 
     env = os.environ.get("COGNITION_PROJECT", "").strip()
@@ -46,6 +46,11 @@ def resolve_project_root(start: Path | None = None) -> Path:
         candidate = Path(env).expanduser().resolve()
         if _has_project_dna(candidate):
             return candidate
+
+    current = (start or Path.cwd()).resolve()
+    for path in [current, *current.parents]:
+        if _has_project_dna(path):
+            return path
 
     try:
         from src.cli.setup_summary import load_last_setup
@@ -58,10 +63,6 @@ def resolve_project_root(start: Path | None = None) -> Path:
     except Exception:
         pass
 
-    current = (start or Path.cwd()).resolve()
-    for path in [current, *current.parents]:
-        if _has_project_dna(path):
-            return path
     return current
 
 
