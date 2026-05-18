@@ -72,8 +72,8 @@ cognition-engine setup --project .
 
 ### Selection and copy (your terminal, your rules)
 
-- **In-app (default):** Textual handles the mouse. **Drag to select only inside the chat log or the trace log** — rail text, headers, and hints use non-selectable chrome so they no longer “stick” to a selection spanning all three columns.
-- **Terminal Ctrl+Shift+C:** the terminal only sees mouse drags if the app is not capturing them. Run with **`CE_NATIVE_COPY=1`** so Cognition Engine starts with **`mouse=False`**; then use the terminal’s selection + **Ctrl+Shift+C** (or your emulator’s copy). Use **PgUp** / **PgDn** to scroll (wheel may not work in this mode).
+- **Terminal Ctrl+Shift+C (default):** Cognition Engine starts with **`mouse=False`**, so your terminal can drag-highlight text normally and copy it with **Ctrl+Shift+C** (or your emulator’s copy). Use **PgUp** / **PgDn** to scroll.
+- **In-app mouse mode:** run with **`CE_APP_MOUSE=1`** or **`CE_NATIVE_COPY=0`** if you prefer clickable buttons, mouse wheel scrolling, and in-app drag-selection inside the chat / trace logs.
 - **Backup:** each assistant reply is still written to **`~/.cognition/last_reply.txt`** for `cat` / `xclip` workflows.
 
 **PgUp** / **PgDn** (with **priority** while the input is focused) scroll the scroll area that contains the focused widget, or the chat column by default.

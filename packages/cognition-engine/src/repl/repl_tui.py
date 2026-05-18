@@ -1077,6 +1077,8 @@ class CognitionReplApp(App):
     def _on_model_dropdown(self, event: Select.Changed) -> None:
         if self._select_syncing:
             return
+        if event.value != event.select.value:
+            return
         self._apply_model_from_ui(event.value)  # type: ignore[arg-type]
 
     @on(Button.Pressed)
@@ -1450,14 +1452,15 @@ class CognitionReplApp(App):
     def run_app(self) -> None:
         """Run TUI.
 
-        Default: Textual mouse on — **click the chat or trace log**, then drag to select
-        text (RichLog is now the scroll surface; an extra scroll wrapper broke selection).
+        Default: terminal owns mouse, so normal drag-highlight + Ctrl+Shift+C works.
+        Use PgUp / PgDn to scroll inside the app.
 
-        ``CE_NATIVE_COPY=1``: terminal owns mouse + **Ctrl+Shift+C**; use **PgUp** / **PgDn**
-        to scroll. Chrome widgets use ``ChromeStatic`` so the rail does not join selection.
+        ``CE_APP_MOUSE=1`` or ``CE_NATIVE_COPY=0``: Textual owns mouse for clicks,
+        wheel scrolling, and in-app log selection.
         """
         import os
 
-        native = os.environ.get("CE_NATIVE_COPY", "0")
-        use_mouse = native.strip().lower() not in ("1", "true", "yes")
+        native = os.environ.get("CE_NATIVE_COPY", "1").strip().lower()
+        app_mouse = os.environ.get("CE_APP_MOUSE", "0").strip().lower()
+        use_mouse = app_mouse in ("1", "true", "yes") or native in ("0", "false", "no")
         self.run(mouse=use_mouse)

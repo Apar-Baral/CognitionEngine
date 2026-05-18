@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 CE_TIPS: list[str] = [
-    "Drag-select inside the chat log or trace log only — sidebar & headers no longer join the selection.",
-    "For terminal Ctrl+Shift+C after selecting text: export CE_NATIVE_COPY=1 (disables in-app mouse; use PgUp/Dn to scroll).",
+    "Terminal drag-highlight + Ctrl+Shift+C works by default; use PgUp/Dn to scroll.",
+    "For clickable buttons and mouse wheel scrolling, run with CE_APP_MOUSE=1.",
     "Last assistant reply is always mirrored to ~/.cognition/last_reply.txt for manual copy.",
-    "Click chat or trace, then PgUp/PgDn to scroll that pane (or wheel when CE mouse is on).",
+    "Use PgUp/PgDn to scroll; mouse wheel is available when CE_APP_MOUSE=1.",
     "Ctrl+M opens the searchable model picker.",
     "Change model in the top strip dropdown — keys auto-match provider.",
     "Simple questions use quick reply; file/command tasks use agent tools.",
@@ -25,7 +25,7 @@ CE_TIPS: list[str] = [
     "Quick mode: explain concepts, who are you, how CE works — no tool loop.",
     "On Kali: sudo apt install -y xclip if you pipe last_reply.txt to the clipboard.",
     "Linux paste in terminal: Ctrl+Shift+V or middle-click.",
-    "CE_NATIVE_COPY=0 (default): Textual mouse wheel + in-app drag-select in logs only.",
+    "CE_NATIVE_COPY=0 enables Textual mouse mode if you prefer in-app selection.",
     "Git identity: Cursor Settings → Git + ~/.cognition/config.yaml git.user_name.",
     "Project must be initialized (green dot) before /start and /plan.",
     "Track progress button runs /status in the sidebar.",
