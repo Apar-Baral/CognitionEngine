@@ -92,7 +92,7 @@ Footer {
 
 #top-bar {
     height: 3;
-    background: linear-gradient(90deg, #111820 0%, #15202b 100%);
+    background: #131a24;
     border: solid #2d3a4f;
     padding: 0 2;
     content-align: left middle;
