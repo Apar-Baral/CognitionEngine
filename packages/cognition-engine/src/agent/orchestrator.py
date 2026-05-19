@@ -17,7 +17,6 @@ from src.agent.permissions import permission_for_command, permission_for_tool
 from src.agent.tool_parser import extract_tool_calls
 from src.agent.tools import ToolRunner
 from src.cli.context import ProjectContext
-from src.models.dynamic_registry import DynamicRegistry
 from src.models.request_builder import RequestBuilder
 from src.models.response_parser import ResponseParser
 
@@ -146,7 +145,7 @@ class AgentOrchestrator:
         return self._chat_quick(user_message)
 
     def _chat_quick(self, user_message: str) -> str:
-        """Single fast LLM turn — no tool loop, no streaming overhead."""
+        """Single fast LLM turn — no tool loop, but still stream tokens to the UI."""
         self._activity("Quick reply mode…")
         model, api_key = self._resolve_model()
         system = self.assembler.build_quick_prompt()
@@ -155,7 +154,7 @@ class AgentOrchestrator:
             api_key,
             system,
             step=0,
-            stream=False,
+            stream=True,
             max_tokens=2048,
             history_limit=8,
         )
@@ -341,7 +340,8 @@ class AgentOrchestrator:
             if cat and not self._permissions.ensure(cat, detail):
                 return (
                     f"Error: delete denied by user ({path}). "
-                    "Tell them to approve in the permission dialog, or use delete_file after approval."
+                    "Tell them to approve in the permission dialog, or use delete_file "
+                    "after approval."
                 )
             self._activity(f"🗑 Deleting file: {path}")
             return self.tools.delete_file(path)

@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import difflib
 from pathlib import Path
-from typing import Any
 
 from src.cli.context import ProjectContext, resolve_project_root
-from src.cli.git_helpers import auto_commit, auto_commit_prefix, git_init_project, should_auto_commit
-from src.core.config import Config
+from src.cli.git_helpers import auto_commit, auto_commit_prefix, should_auto_commit
 
 
 class SessionBridge:
@@ -102,10 +100,27 @@ class SessionBridge:
         if not text.strip():
             return self.ctx.get_project_goal() or "(no goal set)"
         self.ctx.set_project_goal(text)
+        self._write_goal_file(text)
+        self._refresh_bootstrap_preview_if_present()
+        return "Goal updated."
+
+    def _write_goal_file(self, text: str) -> None:
         from src.cli.setup_wizard import _write_goal_file
 
         _write_goal_file(self.root, text)
-        return "Goal updated."
+
+    def _refresh_bootstrap_preview_if_present(self) -> None:
+        """Keep bootstrap.md aligned with the latest DNA goal without starting a session."""
+        boot = self.ctx.cognition_dir / "bootstrap.md"
+        if not boot.is_file():
+            return
+        try:
+            gen = self.ctx.bootstrap_generator()
+            ctx = gen.preview_bootstrap("")
+            gen._save_bootstrap_file(ctx)  # keep existing Claude/CE context fresh
+        except Exception:
+            # Goal persistence must never fail just because bootstrap context is unavailable.
+            return
 
     def cmd_plan(self, goal: str) -> str:
         err = self.ensure_initialized()
@@ -120,6 +135,8 @@ class SessionBridge:
         scan = self.ctx.scan()
         phases = generate_goal_plan(g, num_phases=24, language=scan["language"])
         self.ctx.save_plan(phases, goal=g)
+        self._write_goal_file(g)
+        self._refresh_bootstrap_preview_if_present()
         dna = self.ctx.query.refresh()
         overall = self.ctx.query.calculate_project_completion()
         name = dna.get("project", {}).get("name", self.root.name)
@@ -301,7 +318,11 @@ class SessionBridge:
         if err:
             return err
         state = self.ctx.load_session_state()
-        budget = int(state.get("budget", 75000)) if state else self.ctx.config.get_token_budget("BUILD")
+        budget = (
+            int(state.get("budget", 75000))
+            if state
+            else self.ctx.config.get_token_budget("BUILD")
+        )
         return f"Session budget cap: {budget:,} tokens"
 
     def cmd_commit(self, message: str) -> str:
