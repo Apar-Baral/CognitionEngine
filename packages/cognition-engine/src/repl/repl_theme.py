@@ -112,6 +112,15 @@ Footer {
     margin: 0;
 }
 
+#top-brand {
+    width: auto;
+    min-width: 22;
+    color: #58a6ff;
+    text-style: bold;
+    content-align: left middle;
+    padding: 0 1;
+}
+
 #header-meta {
     width: 1fr;
     min-width: 26;

@@ -24,7 +24,6 @@ from textual.widgets import (
     Label,
     ListItem,
     ListView,
-    LoadingIndicator,
     Select,
     Static,
 )
@@ -179,23 +178,25 @@ class ModelPickerScreen(ModalScreen[str | None]):
                 id="picker-footer",
             )
 
-    def on_mount(self) -> None:
-        self._rebuild_list("")
+    async def on_mount(self) -> None:
+        await self._rebuild_list("")
         self.query_one("#picker-search", Input).focus()
 
-    def _rebuild_list(self, query: str) -> None:
+    async def _rebuild_list(self, query: str) -> None:
         lv = self.query_one("#picker-list", ListView)
-        lv.clear()
+        await lv.clear()
         current = str(self.bridge.ctx.config.get("default_model", ""))
         self._entries = []
         self._id_to_mid = {}
         slot = 0
         pick_idx = 0
+        rows: list[ListItem] = []
         groups = models_grouped_by_tier(self.bridge.ctx.model_registry(), query=query)
         for tier_name, items in groups:
-            hdr_id = f"picker-hdr-{slot}"
             slot += 1
-            lv.mount(ListItem(Label(f"[bold #6cb6ff]— {tier_name} —"), id=hdr_id))
+            header = ListItem(Label(f"[bold #6cb6ff]-- {tier_name} --"))
+            header.disabled = True
+            rows.append(header)
             for opt in items:
                 pick_idx += 1
                 mid = opt["value"]
@@ -205,12 +206,15 @@ class ModelPickerScreen(ModalScreen[str | None]):
                 mark = "[green]● [/green]" if mid == current else ""
                 quick = f"[dim]{min(pick_idx, 9)}[/dim] " if pick_idx <= 9 else "   "
                 label = f"{quick}{mark}{opt['select_label']}  [dim]{opt['provider']}[/dim]"
-                lv.mount(ListItem(Label(label), id=item_id))
+                rows.append(ListItem(Label(label), id=item_id))
                 self._entries.append((mid, opt["select_label"]))
+        if rows:
+            await lv.mount(*rows)
+            lv.index = 1 if len(rows) > 1 and rows[0].id is None else 0
 
     @on(Input.Changed, "#picker-search")
-    def _on_search(self, event: Input.Changed) -> None:
-        self._rebuild_list(event.value)
+    async def _on_search(self, event: Input.Changed) -> None:
+        await self._rebuild_list(event.value)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         item_id = event.item.id or ""
@@ -221,11 +225,30 @@ class ModelPickerScreen(ModalScreen[str | None]):
     def on_key(self, event) -> None:
         if event.key == "escape":
             self.dismiss(None)
+            event.stop()
+            return
+        if event.key == "up":
+            self.query_one("#picker-list", ListView).action_cursor_up()
+            event.stop()
+            return
+        if event.key == "down":
+            self.query_one("#picker-list", ListView).action_cursor_down()
+            event.stop()
+            return
+        if event.key == "enter":
+            lv = self.query_one("#picker-list", ListView)
+            if lv.index is not None and 0 <= lv.index < len(lv.children):
+                item_id = lv.children[lv.index].id or ""
+                mid = self._id_to_mid.get(item_id)
+                if mid:
+                    self.dismiss(mid)
+                    event.stop()
             return
         if event.key in "123456789":
             n = int(event.key) - 1
             if n < len(self._entries):
                 self.dismiss(self._entries[n][0])
+                event.stop()
 
 
 class QuickSetupScreen(ModalScreen[bool]):
@@ -319,6 +342,19 @@ class ComposerInput(Input):
     """Bottom prompt — not part of a log-to-log mouse selection rectangle."""
 
     ALLOW_SELECT = False
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key in ("pageup", "ctrl+up"):
+            self.app.action_scroll_up()
+            event.stop()
+            return
+        if event.key in ("pagedown", "ctrl+down"):
+            self.app.action_scroll_down()
+            event.stop()
+            return
+        if event.key in ("ctrl+o", "ctrl+m"):
+            self.app.action_pick_model()
+            event.stop()
 
 
 class CognitionReplApp(App):
@@ -534,6 +570,7 @@ class CognitionReplApp(App):
             yield ChromeStatic(CE_BRAND_MARKUP, id="brand-rail", markup=True)
             with Vertical(id="chat-column"):
                 with Horizontal(id="header-strip"):
+                    yield ChromeStatic("◈ Cognition Engine", id="top-brand", markup=True)
                     yield ChromeStatic(
                         self._header_meta_text(),
                         id="header-meta",
@@ -550,7 +587,7 @@ class CognitionReplApp(App):
                     )
                 with Vertical(id="thinking-box"):
                     with Horizontal(id="thinking-head"):
-                        yield LoadingIndicator(id="think-spinner")
+                        yield ChromeStatic("...", id="think-spinner", markup=True)
                         yield ChromeStatic("", id="chat-thinking", markup=True)
                     yield ChromeStatic("", id="task-list", markup=True)
                     yield ChromeStatic("", id="thinking-detail", markup=True)
@@ -924,10 +961,10 @@ class CognitionReplApp(App):
         self._update_thinking_box()
         if self._thinking_timer is not None:
             self._thinking_timer.stop()
-        self._thinking_timer = self.set_interval(0.25, self._tick_thinking)
+        self._thinking_timer = self.set_interval(0.75, self._tick_thinking)
         if self._typing_timer is not None:
             self._typing_timer.stop()
-        self._typing_timer = self.set_interval(0.05, self._typing_tick)
+        self._typing_timer = self.set_interval(0.12, self._typing_tick)
 
     def _tick_thinking(self) -> None:
         self._thinking_tick += 1
@@ -1196,7 +1233,7 @@ class CognitionReplApp(App):
                 self._log_system("(empty reply)")
             else:
                 if self._typing_timer is None:
-                    self._typing_timer = self.set_interval(0.05, self._typing_tick)
+                    self._typing_timer = self.set_interval(0.12, self._typing_tick)
         elif result.kind == "error":
             if self._typing_timer is not None:
                 self._typing_timer.stop()
