@@ -76,45 +76,11 @@ Footer {
     padding: 0;
 }
 
-#command-buttons {
-    width: 1fr;
-    height: 3;
-    layout: horizontal;
-    margin: 0;
-}
-
-#command-buttons Button {
-    width: 8;
-    min-width: 6;
-    height: 3;
-    margin: 0;
-    background: #21262d;
-    border: solid #30363d;
-    color: #e6edf3;
-    padding: 0 1;
-}
-
-#command-buttons Button:hover {
-    background: #30363d;
-    border: solid #58a6ff;
-}
-
-#command-buttons Button.-primary {
-    background: #1f3d5c;
-    border: solid #58a6ff;
-    color: #ffffff;
-}
-
-#command-buttons Button.-danger {
-    background: #3d1f1f;
-    border: solid #da3633;
-}
-
 #command-hints {
     color: #768390;
     padding: 0 1;
     border-top: solid #30363d;
-    height: 1;
+    height: 2;
 }
 
 #chat-column {
@@ -211,8 +177,8 @@ Footer {
 /* ── Area 3: slim prompt dock ── */
 #composer-stack {
     height: auto;
-    min-height: 7;
-    max-height: 12;
+    min-height: 5;
+    max-height: 8;
 }
 
 #composer {
@@ -223,15 +189,6 @@ Footer {
     background: #010409;
     padding: 0 1;
     margin: 0;
-}
-
-#bottom-actions {
-    height: 3;
-    min-height: 3;
-    max-height: 3;
-    background: #010409;
-    border-top: solid #21262d;
-    padding: 0 1;
 }
 
 #composer.-busy {
@@ -264,17 +221,6 @@ Footer {
 #input:focus {
     border: none;
     background: #0d1117;
-}
-
-#bottom-actions #model-select {
-    width: 30;
-    min-width: 24;
-    max-width: 34;
-    height: 3;
-    border: solid #30363d;
-    background: #0d1117;
-    color: #e6edf3;
-    margin: 0;
 }
 
 #slash-suggest {

@@ -55,17 +55,6 @@ from src.repl.session_bridge import SLASH_COMMANDS, SessionBridge
 from src.repl.tips import CE_TIPS
 from src.repl.welcome import welcome_markup
 
-COMMAND_BUTTONS: list[tuple[str, str, str]] = [
-    ("btn-start", "Start", "primary"),
-    ("btn-plan", "Plan", "primary"),
-    ("btn-show-plan", "Show", "primary"),
-    ("btn-status", "Status", ""),
-    ("btn-shield", "Shield", ""),
-    ("btn-end", "End", ""),
-    ("btn-setup", "Setup", "primary"),
-    ("btn-quit", "Exit", "danger"),
-]
-
 COMMAND_HINTS = "[dim]Ctrl+M[/] models · [dim]PgUp[/]/[dim]Dn[/] scroll · drag to copy"
 
 
@@ -536,8 +525,6 @@ class CognitionReplApp(App):
         return options[0][1]
 
     def compose(self) -> ComposeResult:
-        model_options = self._model_select_options()
-        model_value = self._model_select_value(model_options)
         yield Header(show_clock=True)
         with Vertical(id="workspace"):
             with Vertical(id="chat-column"):
@@ -570,24 +557,7 @@ class CognitionReplApp(App):
                             id="input",
                         )
                     yield ChromeStatic("", id="slash-suggest", markup=True, classes="hidden")
-                    with Horizontal(id="bottom-actions"):
-                        with Horizontal(id="command-buttons"):
-                            for bid, label, variant in COMMAND_BUTTONS:
-                                classes = ""
-                                if variant == "primary":
-                                    classes = "-primary"
-                                elif variant == "danger":
-                                    classes = "-danger"
-                                yield Button(label, id=bid, classes=classes)
-                        yield Select(
-                            model_options,
-                            id="model-select",
-                            prompt="Model",
-                            value=model_value,
-                            allow_blank=False,
-                        )
-                    yield ChromeStatic(COMMAND_HINTS, id="command-hints", markup=True)
-        yield ChromeStatic(self._tip_text(), id="tips-bar", markup=True)
+                    yield ChromeStatic(self._command_line_text(), id="command-hints", markup=True)
         yield Footer()
 
     def _setup_panel_text(self) -> str:
@@ -677,6 +647,14 @@ class CognitionReplApp(App):
         tip_b = CE_TIPS[(self._tip_index + n // 2) % n]
         return f"[bold #6cb6ff]Tip[/]  {tip_a}\n[bold #6cb6ff]    [/]  [dim]{tip_b}[/]"
 
+    def _command_line_text(self) -> str:
+        model = str(self.bridge.ctx.config.get("default_model", "?"))
+        return (
+            f"[dim]Model:[/] [cyan]{escape_markup(model)}[/]  "
+            "[dim]Commands:[/] /plan /showplan /start /status /end /setup /keys  "
+            "[dim]Ctrl+M model · PgUp/PgDn scroll · drag-select copies[/]"
+        )
+
     def _tick_tip(self) -> None:
         self._tip_index += 2
         try:
@@ -687,7 +665,21 @@ class CognitionReplApp(App):
     def _sync_model_select(self) -> None:
         from src.cli.model_picker import resolve_model_id
 
-        sel = self.query_one("#model-select", Select)
+        try:
+            sel = self.query_one("#model-select", Select)
+        except Exception:
+            self._active_model_id = (
+                resolve_model_id(
+                    str(self.bridge.ctx.config.get("default_model", "")),
+                    self.bridge.ctx.model_registry(),
+                )
+                or str(self.bridge.ctx.config.get("default_model", ""))
+            )
+            try:
+                self.query_one("#command-hints", Static).update(self._command_line_text())
+            except Exception:
+                pass
+            return
         reg = self.bridge.ctx.model_registry()
         current = resolve_model_id(str(self.bridge.ctx.config.get("default_model", "")), reg)
         if not current:
@@ -712,6 +704,7 @@ class CognitionReplApp(App):
     def _refresh_chrome(self, *, sync_select: bool = False) -> None:
         try:
             self.query_one("#header-meta", Static).update(self._header_meta_text())
+            self.query_one("#command-hints", Static).update(self._command_line_text())
             self._sync_model_select()
         except Exception:
             pass
@@ -925,7 +918,7 @@ class CognitionReplApp(App):
         self._thinking_timer = self.set_interval(0.1, self._tick_thinking)
         if self._typing_timer is not None:
             self._typing_timer.stop()
-        self._typing_timer = self.set_interval(0.016, self._typing_tick)
+        self._typing_timer = self.set_interval(0.05, self._typing_tick)
 
     def _tick_thinking(self) -> None:
         self._thinking_tick += 1
@@ -996,10 +989,13 @@ class CognitionReplApp(App):
         self._try_bind_last_project()
         self._active_model_id = str(self.bridge.ctx.config.get("default_model", ""))
         self._sync_model_select()
-        self._tips_timer = self.set_interval(8.0, self._tick_tip)
-        self._token_refresh_timer = self.set_interval(1.5, self._refresh_token_bar)
         try:
             self.query_one("#header-meta", Static).update(self._header_meta_text())
+        except Exception:
+            pass
+        try:
+            inp = self.query_one("#input", Input)
+            inp.cursor_blink = False
         except Exception:
             pass
         try:
@@ -1191,7 +1187,7 @@ class CognitionReplApp(App):
                 self._log_system("(empty reply)")
             else:
                 if self._typing_timer is None:
-                    self._typing_timer = self.set_interval(0.016, self._typing_tick)
+                    self._typing_timer = self.set_interval(0.05, self._typing_tick)
         elif result.kind == "error":
             if self._typing_timer is not None:
                 self._typing_timer.stop()

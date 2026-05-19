@@ -150,7 +150,7 @@ class AgentOrchestrator:
         return self._chat_quick(user_message)
 
     def _chat_quick(self, user_message: str) -> str:
-        """Single fast LLM turn — no tool loop, but still stream tokens to the UI."""
+        """Single reliable LLM turn — no tool loop; TUI types the final response."""
         self._activity("Quick reply mode…")
         model, api_key = self._resolve_model()
         system = self.assembler.build_quick_prompt()
@@ -159,7 +159,7 @@ class AgentOrchestrator:
             api_key,
             system,
             step=0,
-            stream=True,
+            stream=False,
             max_tokens=1024,
             history_limit=8,
         )
