@@ -49,23 +49,21 @@ from src.repl.chat_log import ChatRichLog
 from src.repl.clipboard_util import save_copy_fallback
 from src.repl.live_thinking import LiveAgentView, live_thinking_markup
 from src.repl.markup_safe import escape_markup
-from src.repl.rail_sidebar import format_left_rail
-from src.repl.repl_theme import CE_APP_CSS, ChromeStatic, PaneScroll
+from src.repl.repl_theme import CE_APP_CSS, ChromeStatic
 from src.repl.response_clean import clean_assistant_text
 from src.repl.session_bridge import SLASH_COMMANDS, SessionBridge
 from src.repl.tips import CE_TIPS
-from src.repl.trace_viz import trace_lane_markup
 from src.repl.welcome import welcome_markup
 
 COMMAND_BUTTONS: list[tuple[str, str, str]] = [
-    ("btn-start", "Start session", "primary"),
-    ("btn-plan", "Generate plan", "primary"),
-    ("btn-show-plan", "Show plan", "primary"),
-    ("btn-shield", "Shield info", ""),
-    ("btn-status", "Track progress", ""),
-    ("btn-end", "End session", ""),
-    ("btn-setup", "Setup keys", "primary"),
-    ("btn-quit", "Exit CE", "danger"),
+    ("btn-start", "Start", "primary"),
+    ("btn-plan", "Plan", "primary"),
+    ("btn-show-plan", "Show", "primary"),
+    ("btn-status", "Status", ""),
+    ("btn-shield", "Shield", ""),
+    ("btn-end", "End", ""),
+    ("btn-setup", "Setup", "primary"),
+    ("btn-quit", "Exit", "danger"),
 ]
 
 COMMAND_HINTS = "[dim]Ctrl+M[/] models · [dim]PgUp[/]/[dim]Dn[/] scroll · drag to copy"
@@ -541,29 +539,7 @@ class CognitionReplApp(App):
         model_options = self._model_select_options()
         model_value = self._model_select_value(model_options)
         yield Header(show_clock=True)
-        with Horizontal(id="workspace"):
-            with PaneScroll(id="left-rail", can_focus=True):
-                with Vertical(id="left-rail-inner"):
-                    yield ChromeStatic(
-                        format_left_rail(
-                            project_root=self.bridge.root,
-                            setup=load_last_setup(),
-                            project_setup=load_project_setup_summary(self.bridge.root),
-                            ctx=self.bridge.ctx,
-                        ),
-                        id="sidebar-status",
-                        markup=True,
-                    )
-                    yield ChromeStatic("ACTIONS", classes="rail-section-title")
-                    with Vertical(id="command-buttons"):
-                        for bid, label, variant in COMMAND_BUTTONS:
-                            classes = ""
-                            if variant == "primary":
-                                classes = "-primary"
-                            elif variant == "danger":
-                                classes = "-danger"
-                            yield Button(label, id=bid, classes=classes)
-                    yield ChromeStatic(COMMAND_HINTS, id="command-hints", markup=True)
+        with Vertical(id="workspace"):
             with Vertical(id="chat-column"):
                 with Horizontal(id="header-strip"):
                     yield ChromeStatic(
@@ -593,6 +569,16 @@ class CognitionReplApp(App):
                             placeholder="Ask anything — type / for commands",
                             id="input",
                         )
+                    yield ChromeStatic("", id="slash-suggest", markup=True, classes="hidden")
+                    with Horizontal(id="bottom-actions"):
+                        with Horizontal(id="command-buttons"):
+                            for bid, label, variant in COMMAND_BUTTONS:
+                                classes = ""
+                                if variant == "primary":
+                                    classes = "-primary"
+                                elif variant == "danger":
+                                    classes = "-danger"
+                                yield Button(label, id=bid, classes=classes)
                         yield Select(
                             model_options,
                             id="model-select",
@@ -600,23 +586,7 @@ class CognitionReplApp(App):
                             value=model_value,
                             allow_blank=False,
                         )
-                    yield ChromeStatic("", id="slash-suggest", markup=True, classes="hidden")
-            with Vertical(id="trace-rail"):
-                yield ChromeStatic("AGENT TRACE", classes="rail-section-title")
-                with Vertical(id="trace-body"):
-                    yield ChatRichLog(
-                        id="activity-log",
-                        highlight=True,
-                        markup=True,
-                        wrap=True,
-                        auto_scroll=True,
-                        min_width=1,
-                    )
-                yield ChromeStatic(
-                    "[dim]Native terminal copy is default · Ctrl+M models[/]",
-                    id="trace-hint",
-                    markup=True,
-                )
+                    yield ChromeStatic(COMMAND_HINTS, id="command-hints", markup=True)
         yield ChromeStatic(self._tip_text(), id="tips-bar", markup=True)
         yield Footer()
 
@@ -743,14 +713,6 @@ class CognitionReplApp(App):
         try:
             self.query_one("#header-meta", Static).update(self._header_meta_text())
             self._sync_model_select()
-            self.query_one("#sidebar-status", Static).update(
-                format_left_rail(
-                    project_root=self.bridge.root,
-                    setup=load_last_setup(),
-                    project_setup=load_project_setup_summary(self.bridge.root),
-                    ctx=self.bridge.ctx,
-                )
-            )
         except Exception:
             pass
         self._refresh_token_bar()
@@ -758,8 +720,8 @@ class CognitionReplApp(App):
             self._sync_model_select()
 
     def _log_work(self, text: str) -> None:
-        self.query_one("#activity-log", ChatRichLog).write(trace_lane_markup(text))
-        self.query_one("#activity-log", ChatRichLog).scroll_end(animate=False)
+        # Detailed trace side-pane was removed; keep activity in memory for the progress box.
+        return
 
     def _apply_model_from_ui(self, model_id: object) -> None:
 
@@ -1303,6 +1265,41 @@ class CognitionReplApp(App):
             self.query_one("#input", Input).value = "/goal "
             self.query_one("#input", Input).focus()
 
+    def _natural_plan_goal(self, line: str) -> str | None:
+        text = line.strip()
+        low = text.lower()
+        starters = (
+            "plan this",
+            "plan it",
+            "make a plan",
+            "create a plan",
+            "generate a plan",
+            "plan",
+        )
+        if not any(low == s or low.startswith(s + " ") for s in starters):
+            return None
+        for prefix in starters:
+            if low.startswith(prefix):
+                rest = text[len(prefix) :].strip(" :-")
+                return rest or self.bridge.ctx.get_project_goal() or self._last_user_prompt
+        return None
+
+    def _handle_natural_plan(self, line: str) -> bool:
+        goal = self._natural_plan_goal(line)
+        if goal is None:
+            return False
+        self._log_user(line)
+        if not self._require_project("Plan"):
+            return True
+        result = self.bridge.cmd_plan(goal)
+        self._log(
+            "\n[bold #3fb950]══════════════════════════════════════[/]\n"
+            f"{result}\n"
+            "[bold #3fb950]══════════════════════════════════════[/]\n"
+        )
+        self._refresh_chrome(sync_select=False)
+        return True
+
     def action_prompt_end(self) -> None:
         self._log("[dim]Type your session summary after /end — e.g.[/] /end Finished auth module")
         self.query_one("#input", Input).value = "/end "
@@ -1379,16 +1376,16 @@ class CognitionReplApp(App):
     def action_clear_log(self) -> None:
         self.query_one("#log", ChatRichLog).clear()
 
-    def _scroll_target(self) -> VerticalScroll | PaneScroll | ChatRichLog:
+    def _scroll_target(self) -> VerticalScroll | ChatRichLog:
         w = self.focused
-        if isinstance(w, (VerticalScroll, PaneScroll)):
+        if isinstance(w, VerticalScroll):
             return w
         if isinstance(w, ChatRichLog):
             return w
         if w is not None:
             parent = getattr(w, "parent", None)
             while parent is not None:
-                if isinstance(parent, (VerticalScroll, PaneScroll)):
+                if isinstance(parent, VerticalScroll):
                     return parent
                 if isinstance(parent, ChatRichLog):
                     return parent
@@ -1472,6 +1469,9 @@ class CognitionReplApp(App):
                 else:
                     self._log_system(result)
             self._refresh_chrome(sync_select=False)
+            return
+
+        if self._handle_natural_plan(line):
             return
 
         self._log_user(line)
