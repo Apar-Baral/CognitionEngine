@@ -11,4 +11,4 @@ def test_format_plan_markup_contains_phases():
     text = format_plan_markup(phases, goal="Build an XSS scanner", overall_completion=0.0)
     assert "MASTER PLAN" in text
     assert "PHASE_01" in text
-    assert "Discovery" in text
+    assert "Scope and safety controls" in text

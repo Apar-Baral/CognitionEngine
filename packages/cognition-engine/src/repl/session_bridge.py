@@ -78,6 +78,7 @@ class SessionBridge:
   /memory            DNA + sessions + insights summary
   /rl                Reinforcement learning (Q-table) status
   /keys              Which API keys are configured
+  /copy              Copy full chat log (TUI command)
   /chat TEXT         Send message to agent (requires API key)
   /exit              Quit"""
 
@@ -395,6 +396,7 @@ class SessionBridge:
             "/status": lambda: self.cmd_status(),
             "/budget": lambda: self.cmd_budget(),
             "/commit": lambda: self.cmd_commit(arg),
+            "/copy": lambda: "Use Ctrl+Y or the Copy chat button in the TUI.",
             "/setup": lambda: self.cmd_setup(),
             "/project": lambda: self.cmd_project(arg),
             "/cd": lambda: self.cmd_project(arg),
@@ -422,6 +424,7 @@ SLASH_COMMANDS: tuple[str, ...] = (
     "/cd",
     "/chat",
     "/commit",
+    "/copy",
     "/end",
     "/exit",
     "/goal",

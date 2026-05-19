@@ -40,3 +40,16 @@ def test_plan_updates_goal_file(tmp_path: Path):
     assert new_goal in bridge.ctx.get_project_goal()
     assert new_goal in (tmp_path / "GOAL.md").read_text(encoding="utf-8")
     assert old_goal not in (tmp_path / "GOAL.md").read_text(encoding="utf-8")
+
+
+def test_xss_scanner_plan_is_specific(tmp_path: Path):
+    cog = tmp_path / ".cognition"
+    cog.mkdir()
+    (cog / "dna.json").write_text(json.dumps(minimal_valid_dna()), encoding="utf-8")
+
+    bridge = SessionBridge(tmp_path)
+    out = bridge.dispatch("/plan automated xss vulnerability scanner cli for bug bounty")
+
+    assert "Scope and safety controls" in out
+    assert "Payload library and mutation engine" in out
+    assert "Browser verification" in out

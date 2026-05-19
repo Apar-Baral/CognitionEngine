@@ -39,6 +39,75 @@ _PHASE_TEMPLATES = [
     ("Retrospective", "Lessons learned and DNA updates"),
 ]
 
+_XSS_SCANNER_PHASES = [
+    (
+        "Scope and safety controls",
+        "Define authorized target rules, rate limits, denylist handling, and safe defaults.",
+        [
+            "CLI accepts a target URL/scope file",
+            "Scan refuses private/unsafe targets unless explicitly allowed",
+        ],
+    ),
+    (
+        "CLI project skeleton",
+        "Build command surface, config loading, output formats, and structured logging.",
+        ["`scan` command runs from terminal", "JSON and human-readable output modes exist"],
+    ),
+    (
+        "URL normalization and crawling",
+        "Normalize URLs, discover same-scope links, collect forms, and extract query parameters.",
+        ["Crawler respects scope and depth", "Forms and URL params are stored as test candidates"],
+    ),
+    (
+        "Payload library and mutation engine",
+        "Create reflected, attribute, script-context, and DOM XSS payload mutations.",
+        ["Payloads are tagged by context", "User-supplied payload files can be loaded"],
+    ),
+    (
+        "HTTP runner and rate limiter",
+        "Implement async requests, retries, headers, proxy support, timeouts, and throttling.",
+        ["Concurrent scanner has bounded rate", "Proxy and custom headers work"],
+    ),
+    (
+        "Reflection and context detection",
+        "Detect payload reflection and classify HTML, attribute, JS, URL, and text contexts.",
+        ["Scanner reports reflected input location", "Context classifier drives payload choice"],
+    ),
+    (
+        "Browser verification",
+        "Use a headless browser to verify executable XSS instead of reflection only.",
+        ["Alert/callback/canary verification works", "False positives are marked unverified"],
+    ),
+    (
+        "Learning and payload prioritization",
+        "Track payload success per context and prioritize future attempts from scan history.",
+        [
+            "Payload success metrics are persisted",
+            "Scanner reorders payloads by context effectiveness",
+        ],
+    ),
+    (
+        "Reporting and evidence",
+        "Generate findings with evidence, reproduction command, severity, and remediation.",
+        ["Findings include proof and confidence", "Reports export to JSON/Markdown"],
+    ),
+    (
+        "Authentication/session support",
+        "Support cookies, bearer tokens, header profiles, session reuse, and auth scans.",
+        ["Authenticated requests can be replayed", "Secrets are excluded from reports/logs"],
+    ),
+    (
+        "Test lab and regression suite",
+        "Add vulnerable local fixtures and automated crawler/payload/verification tests.",
+        ["Local vulnerable app fixtures exist", "Regression tests cover true/false positives"],
+    ),
+    (
+        "Packaging and release",
+        "Package the scanner as an installable CLI with docs, examples, and CI checks.",
+        ["`pipx install`/entry point works", "README documents authorized-use workflow"],
+    ),
+]
+
 
 def _phase(
     num: int,
@@ -90,6 +159,58 @@ def _phase(
     }
 
 
+def _custom_phase(
+    num: int,
+    name: str,
+    description: str,
+    deliverables: list[str],
+    *,
+    estimated_tokens: int = 12_000,
+) -> dict[str, Any]:
+    phase = _phase(num, name, description, estimated_tokens=estimated_tokens)
+    phase["deliverables"] = deliverables
+    phase["sub_tasks"] = [
+        {
+            "id": f"P{num}_T1",
+            "name": f"{name} — implementation",
+            "status": TaskStatus.IN_PROGRESS.value if num == 1 else TaskStatus.PENDING.value,
+            "progress": 0,
+            "files_modified": [],
+            "completion_criteria": deliverables[0],
+            "estimated_tokens": int(estimated_tokens * 0.55),
+            "next_action": description,
+        },
+        {
+            "id": f"P{num}_T2",
+            "name": f"{name} — validation",
+            "status": TaskStatus.PENDING.value,
+            "progress": 0,
+            "files_modified": [],
+            "completion_criteria": deliverables[-1],
+            "estimated_tokens": int(estimated_tokens * 0.30),
+            "next_action": f"Prove: {deliverables[-1]}",
+        },
+        {
+            "id": f"P{num}_T3",
+            "name": f"{name} — documentation",
+            "status": TaskStatus.PENDING.value,
+            "progress": 0,
+            "files_modified": [],
+            "completion_criteria": "Docs/examples explain how to use this capability safely",
+            "estimated_tokens": int(estimated_tokens * 0.15),
+        },
+    ]
+    return phase
+
+
+def _looks_like_xss_scanner(goal: str) -> bool:
+    text = goal.lower()
+    return (
+        "xss" in text
+        and any(term in text for term in ("scanner", "scan", "vulnerability", "bug bounty"))
+    ) or ("bug bounty" in text and "cli" in text)
+
+
 def generate_simple_plan(project_name: str, language: str = "python") -> list[dict[str, Any]]:
     _ = project_name, language
     return [_phase(i + 1, name, desc) for i, (name, desc) in enumerate(_PHASE_TEMPLATES[:8])]
@@ -102,6 +223,12 @@ def generate_goal_plan(
     language: str = "python",
 ) -> list[dict[str, Any]]:
     _ = language
+    if _looks_like_xss_scanner(goal):
+        wanted = max(8, min(len(_XSS_SCANNER_PHASES), num_phases))
+        return [
+            _custom_phase(i + 1, name, desc, deliverables, estimated_tokens=10_000 + i * 1_500)
+            for i, (name, desc, deliverables) in enumerate(_XSS_SCANNER_PHASES[:wanted])
+        ]
     count = max(8, min(30, num_phases))
     phases: list[dict[str, Any]] = []
     for i in range(count):

@@ -35,7 +35,7 @@ def format_plan_markup(
         pid = phase.get("id", f"PHASE_{i:02d}")
         name = phase.get("name", "")
         status = phase.get("status", PhaseStatus.NOT_STARTED.value)
-        score = int(phase.get("completion_score", 0))
+        score = int(_phase_progress(phase))
         icon = _status_glyph(status)
         here = " [bold yellow]◀ current[/]" if i == current_idx else ""
         lines.append(
@@ -45,11 +45,16 @@ def format_plan_markup(
         desc = (phase.get("description") or "")[:100]
         if desc:
             lines.append(f"   [dim]{desc}[/]")
+        deliverables = [str(d) for d in phase.get("deliverables", []) if str(d).strip()]
+        if deliverables:
+            lines.append(f"   [dim]deliverable:[/] {deliverables[0][:110]}")
         for st in phase.get("sub_tasks", [])[:2]:
             sid = st.get("id", "")
             st_name = st.get("name", "")
             prog = st.get("progress", 0)
-            lines.append(f"   [dim]· {sid}[/] {st_name} [dim]{prog}%[/]")
+            crit = str(st.get("completion_criteria", "") or "")
+            suffix = f" [dim]=> {crit[:70]}[/]" if crit else ""
+            lines.append(f"   [dim]· {sid}[/] {st_name} [dim]{prog}%[/]{suffix}")
     lines.append("")
     lines.append("[dim]Tip: /status for tracker · Start session to refresh bootstrap[/]")
     return "\n".join(lines)
@@ -74,7 +79,7 @@ def format_plan_plain(
         pid = phase.get("id", f"PHASE_{i:02d}")
         name = phase.get("name", "")
         status = phase.get("status", "?")
-        score = int(phase.get("completion_score", 0))
+        score = int(_phase_progress(phase))
         mark = " <-- current" if status == PhaseStatus.IN_PROGRESS.value else ""
         lines.append(f"  {pid}  {name}  ({status}, {score}%){mark}")
         desc = (phase.get("description") or "")[:90]
@@ -154,3 +159,18 @@ def _status_glyph(status: str) -> str:
     if status == PhaseStatus.BLOCKED.value:
         return "[red]✗[/]"
     return "[dim]○[/]"
+
+
+def _phase_progress(phase: dict[str, Any]) -> float:
+    subs = [st for st in phase.get("sub_tasks", []) if isinstance(st, dict)]
+    if not subs:
+        return float(phase.get("completion_score", 0) or 0)
+    total = sum(max(int(st.get("estimated_tokens", 1) or 1), 1) for st in subs)
+    if total <= 0:
+        return float(phase.get("completion_score", 0) or 0)
+    done = sum(
+        (float(st.get("progress", 0) or 0) / 100.0)
+        * max(int(st.get("estimated_tokens", 1) or 1), 1)
+        for st in subs
+    )
+    return round(done * 100.0 / total, 2)

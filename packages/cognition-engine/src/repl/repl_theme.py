@@ -1,7 +1,7 @@
 """Cognition Engine REPL visual theme."""
 
-from textual.widgets import Static
 from textual.containers import VerticalScroll
+from textual.widgets import Static
 
 
 class ChromeStatic(Static):
@@ -130,8 +130,9 @@ Footer {
 }
 
 #header-strip #model-select {
-    width: 1fr;
-    min-width: 28;
+    width: 54;
+    min-width: 24;
+    max-width: 58;
     border: solid #58a6ff;
     background: #161b22;
     margin: 0 1 0 0;
@@ -144,9 +145,8 @@ Footer {
 }
 
 #header-meta {
-    width: auto;
-    min-width: 16;
-    max-width: 48%;
+    width: 1fr;
+    min-width: 26;
     color: #adbac7;
     content-align: right middle;
     text-align: right;

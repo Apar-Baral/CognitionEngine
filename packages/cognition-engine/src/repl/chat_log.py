@@ -47,7 +47,7 @@ class ChatRichLog(RichLog):
     def end_stream_plain_merge(self) -> None:
         self.end_stream_frame()
 
-    def update_stream_frame(self, content: str, plain: str) -> None:
+    def update_stream_frame(self, content: str, plain: str, *, scroll_end: bool = True) -> None:
         """Replace the visible streaming block without stacking one line per token."""
         if self._stream_frame_line_count and self._stream_frame_start_line is not None:
             start = self._stream_frame_start_line
@@ -62,7 +62,7 @@ class ChatRichLog(RichLog):
             self.plain_lines.append("")
         self.plain_lines[self._stream_plain_index] = plain
         before = len(self.lines)
-        RichLog.write(self, content, expand=True)
+        RichLog.write(self, content, expand=True, scroll_end=scroll_end)
         self._stream_frame_start_line = before
         self._stream_frame_line_count = max(0, len(self.lines) - before)
 

@@ -11,6 +11,7 @@ from typing import Any
 
 from textual import events, on
 from textual.app import App, ComposeResult
+from textual.await_complete import AwaitComplete
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
@@ -24,13 +25,12 @@ from textual.widgets import (
     ListItem,
     ListView,
     LoadingIndicator,
-    RichLog,
     Select,
     Static,
 )
-from textual.await_complete import AwaitComplete
 from textual.worker import Worker, WorkerState
 
+from src.agent.permissions import PermissionDecision
 from src.cli.context import resolve_project_root
 from src.cli.model_picker import (
     apply_model_choice,
@@ -44,20 +44,18 @@ from src.cli.setup_summary import (
     load_last_setup,
     load_project_setup_summary,
 )
-from src.repl.chat_log import ChatRichLog
 from src.repl.agent_tasks import TaskBoard, ingest_activity, task_board_markup
-from src.repl.clipboard_util import save_copy_fallback
-from src.repl.response_clean import clean_assistant_text
-from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP, ChromeStatic, PaneScroll
-from src.repl.session_bridge import SLASH_COMMANDS, SessionBridge
-from src.repl.markup_safe import escape_markup
+from src.repl.chat_log import ChatRichLog
+from src.repl.clipboard_util import copy_to_clipboard, save_copy_fallback
 from src.repl.live_thinking import LiveAgentView, live_thinking_markup
+from src.repl.markup_safe import escape_markup
 from src.repl.rail_sidebar import format_left_rail
+from src.repl.repl_theme import CE_APP_CSS, ChromeStatic, PaneScroll
+from src.repl.response_clean import clean_assistant_text
+from src.repl.session_bridge import SLASH_COMMANDS, SessionBridge
 from src.repl.tips import CE_TIPS
-from src.repl.welcome import welcome_markup
 from src.repl.trace_viz import trace_lane_markup
-from src.agent.permissions import PermissionDecision
-
+from src.repl.welcome import welcome_markup
 
 COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-start", "Start session", "primary"),
@@ -65,14 +63,14 @@ COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-show-plan", "Show plan", "primary"),
     ("btn-shield", "Shield info", ""),
     ("btn-status", "Track progress", ""),
+    ("btn-copy", "Copy chat", ""),
     ("btn-end", "End session", ""),
     ("btn-setup", "Setup keys", "primary"),
     ("btn-quit", "Exit CE", "danger"),
 ]
 
 COMMAND_HINTS = (
-    "[dim]Ctrl+M[/] model search · [dim]PgUp[/]/[dim]Dn[/] scroll · "
-    "[dim]Click chat log[/] then drag to select"
+    "[dim]Ctrl+M[/] models · [dim]Ctrl+Y[/] copy chat · [dim]PgUp[/]/[dim]Dn[/] scroll"
 )
 
 
@@ -209,7 +207,8 @@ class ModelPickerScreen(ModalScreen[str | None]):
         self._id_to_mid = {}
         slot = 0
         pick_idx = 0
-        for tier_name, items in models_grouped_by_tier(self.bridge.ctx.model_registry(), query=query):
+        groups = models_grouped_by_tier(self.bridge.ctx.model_registry(), query=query)
+        for tier_name, items in groups:
             hdr_id = f"picker-hdr-{slot}"
             slot += 1
             lv.mount(ListItem(Label(f"[bold #6cb6ff]— {tier_name} —"), id=hdr_id))
@@ -353,6 +352,7 @@ class CognitionReplApp(App):
         Binding("ctrl+m", "pick_model", "Models", show=True),
         Binding("ctrl+s", "action_start", "Start", show=True),
         Binding("ctrl+e", "prompt_end", "End", show=True),
+        Binding("ctrl+y", "copy_chat", "Copy chat", show=True),
         Binding("ctrl+l", "clear_log", "Clear", show=False),
         Binding("pageup", "scroll_up", "▲", show=False, priority=True),
         Binding("pagedown", "scroll_down", "▼", show=False, priority=True),
@@ -388,6 +388,8 @@ class CognitionReplApp(App):
         self._live_view = LiveAgentView(max_steps=40)
         self._task_board = TaskBoard()
         self._token_refresh_timer: Timer | None = None
+        self._stream_token_base_total = 0
+        self._stream_token_base_output = 0
 
     def _build_agent(self):
         try:
@@ -476,6 +478,17 @@ class CognitionReplApp(App):
         self._live_view.stream += chunk
         if len(self._live_view.stream) > 4000:
             self._live_view.stream = self._live_view.stream[-4000:]
+        estimated_out = max(1, len(self._live_view.stream) // 4)
+        self._live_tokens["output"] = max(
+            int(self._live_tokens.get("output", 0)),
+            self._stream_token_base_output + estimated_out,
+        )
+        self._live_tokens["last_turn"] = estimated_out
+        self._live_tokens["total"] = max(
+            int(self._live_tokens.get("total", 0)),
+            self._stream_token_base_total + estimated_out,
+        )
+        self._refresh_token_bar()
         self._update_thinking_box()
 
     def _on_agent_tokens(self, usage: dict[str, int]) -> None:
@@ -495,7 +508,7 @@ class CognitionReplApp(App):
         self._refresh_token_bar()
 
     def _try_bind_last_project(self) -> None:
-        """Do not auto-switch to a different directory than cwd (avoids surprise project context)."""
+        """Do not auto-switch to a different directory than cwd."""
         return
 
     def _require_project(self, action: str = "This action") -> bool:
@@ -633,12 +646,17 @@ class CognitionReplApp(App):
     def _session_token_totals(self) -> dict[str, int]:
         t = dict(self._live_tokens)
         if self._agent:
-            t = {
+            agent_t = {
                 "input": int(self._agent.session_tokens.get("input", 0)),
                 "output": int(self._agent.session_tokens.get("output", 0)),
                 "total": int(self._agent.session_tokens.get("total", 0)),
                 "last_turn": int(self._agent.session_tokens.get("last_turn", 0)),
             }
+            if self._chat_busy and int(t.get("last_turn", 0)) > agent_t["last_turn"]:
+                t["input"] = max(int(t.get("input", 0)), agent_t["input"])
+                t["total"] = max(int(t.get("total", 0)), agent_t["total"])
+            else:
+                t = agent_t
         if self.bridge.ctx.is_initialized():
             try:
                 op = self.bridge.ctx.active_operational_memory()
@@ -753,7 +771,6 @@ class CognitionReplApp(App):
         self.query_one("#activity-log", ChatRichLog).scroll_end(animate=False)
 
     def _apply_model_from_ui(self, model_id: object) -> None:
-        from src.cli.model_picker import apply_model_choice
 
         reg = self.bridge.ctx.model_registry()
         mid = normalize_model_id(model_id, reg)
@@ -841,9 +858,11 @@ class CognitionReplApp(App):
             log.update_stream_frame(
                 self._assistant_stream_markup(self._last_assistant_plain),
                 self._last_assistant_plain,
+                scroll_end=log.is_vertical_scroll_end,
             )
         log.end_stream_frame()
-        self._scroll_chat_end()
+        if log.is_vertical_scroll_end:
+            self._scroll_chat_end()
         if (self._last_assistant_plain or "").strip():
             save_copy_fallback(self._last_assistant_plain)
         self._assist_header_done = False
@@ -863,11 +882,13 @@ class CognitionReplApp(App):
         if end > self._assist_body_typed:
             self._assist_body_typed = end
             visible = buf[:end]
-            self.query_one("#log", ChatRichLog).update_stream_frame(
+            log = self.query_one("#log", ChatRichLog)
+            follow = log.is_vertical_scroll_end
+            log.update_stream_frame(
                 self._assistant_stream_markup(visible),
                 visible,
+                scroll_end=follow,
             )
-            self._scroll_chat_end()
         if (
             not self._chat_busy
             and (self._typing_full or "").strip()
@@ -878,6 +899,12 @@ class CognitionReplApp(App):
 
     def _log_system(self, text: str) -> None:
         self._log(f"[dim]· {text}[/]")
+
+    def _copy_chat_to_clipboard(self) -> None:
+        text = self.query_one("#log", ChatRichLog).plain_text()
+        ok, msg = copy_to_clipboard(text)
+        level = "green" if ok else "yellow"
+        self._log_system(f"[{level}]{escape_markup(msg)}[/]")
 
     def _display_plan(self, *, generate: bool = False) -> None:
         """Show plan in main chat immediately (sync — reliable visibility)."""
@@ -930,6 +957,9 @@ class CognitionReplApp(App):
 
     def _start_thinking(self) -> None:
         self._thinking_tick = 0
+        token_base = self._session_token_totals()
+        self._stream_token_base_total = int(token_base.get("total", 0))
+        self._stream_token_base_output = int(token_base.get("output", 0))
         self._activity_recent = []
         self._live_view = LiveAgentView(max_steps=40)
         self._task_board = TaskBoard()
@@ -1106,6 +1136,8 @@ class CognitionReplApp(App):
         elif bid == "btn-status":
             if self._require_project("Status"):
                 self._run_bridge(lambda: self.bridge.cmd_status())
+        elif bid == "btn-copy":
+            self._copy_chat_to_clipboard()
         elif bid == "btn-plan":
             self._prompt_plan()
         elif bid == "btn-show-plan":
@@ -1364,6 +1396,9 @@ class CognitionReplApp(App):
     def action_clear_log(self) -> None:
         self.query_one("#log", ChatRichLog).clear()
 
+    def action_copy_chat(self) -> None:
+        self._copy_chat_to_clipboard()
+
     def _scroll_target(self) -> VerticalScroll | PaneScroll | ChatRichLog:
         w = self.focused
         if isinstance(w, (VerticalScroll, PaneScroll)):
@@ -1407,7 +1442,11 @@ class CognitionReplApp(App):
             if cmd in ("/exit", "/quit"):
                 self.action_confirm_quit()
                 return
-            if cmd in ("/model", "/models") and cmd == "/model" and line.strip().lower() == "/model":
+            if (
+                cmd in ("/model", "/models")
+                and cmd == "/model"
+                and line.strip().lower() == "/model"
+            ):
                 self.action_pick_model()
                 return
             if cmd == "/setup":
@@ -1430,6 +1469,10 @@ class CognitionReplApp(App):
                     )
                 )
                 self._refresh_chrome(sync_select=False)
+                return
+            if cmd == "/copy":
+                self._log_user(line)
+                self._copy_chat_to_clipboard()
                 return
             self._log_user(line)
             result = self.bridge.dispatch(line)

@@ -310,6 +310,12 @@ class AgentOrchestrator:
 
         latency = (time.perf_counter() - t0) * 1000
         self._activity(f"Response ({latency:.0f} ms)")
+        if not usage and text.strip():
+            prompt_text = system + "\n" + "\n".join(m.get("content", "") for m in messages)
+            usage = {
+                "input_tokens": _estimate_tokens(prompt_text),
+                "output_tokens": _estimate_tokens(text),
+            }
         if usage:
             self._log_tokens(usage)
         inp = int(usage.get("input_tokens", 0))
@@ -421,3 +427,7 @@ class AgentOrchestrator:
             )
         except Exception:
             logger.debug("Could not log tokens to operational memory", exc_info=True)
+
+
+def _estimate_tokens(text: str) -> int:
+    return max(1, len(text) // 4) if text.strip() else 0
