@@ -62,7 +62,7 @@ class SessionBridge:
     def cmd_help(self) -> str:
         return """Commands:
   /help              This help
-  /model [ID]        Pick model (Ctrl+M) or set by ID
+  /model [ID]        Pick model (Ctrl+O) or set by ID
   /models            List registered models
   /goal TEXT         Set project goal
   /plan [goal]       Generate + show master plan
@@ -91,7 +91,7 @@ class SessionBridge:
 
     def cmd_model(self, model_id: str) -> str:
         if not model_id.strip():
-            return "Use the model dropdown in the top bar or Ctrl+M to search."
+            return "Use /model MODEL_ID, /models, or Ctrl+O to search."
         from src.cli.model_picker import apply_model_choice
 
         return apply_model_choice(self.ctx, model_id.strip())

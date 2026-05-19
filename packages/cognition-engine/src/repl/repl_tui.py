@@ -1,4 +1,4 @@
-"""Advanced Textual TUI — persistent commands, dropdown model select, searchable picker."""
+"""Advanced Textual TUI — command-first agent console with searchable model picker."""
 
 from __future__ import annotations
 
@@ -49,13 +49,13 @@ from src.repl.chat_log import ChatRichLog
 from src.repl.clipboard_util import save_copy_fallback
 from src.repl.live_thinking import LiveAgentView, live_thinking_markup
 from src.repl.markup_safe import escape_markup
-from src.repl.repl_theme import CE_APP_CSS, ChromeStatic
+from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP, ChromeStatic
 from src.repl.response_clean import clean_assistant_text
 from src.repl.session_bridge import SLASH_COMMANDS, SessionBridge
 from src.repl.tips import CE_TIPS
 from src.repl.welcome import welcome_markup
 
-COMMAND_HINTS = "[dim]Ctrl+M[/] models · [dim]PgUp[/]/[dim]Dn[/] scroll · drag to copy"
+COMMAND_HINTS = "[dim]Ctrl+O[/] models · [dim]PgUp[/]/[dim]Dn[/] scroll · drag to copy"
 
 
 @dataclass(frozen=True)
@@ -334,11 +334,14 @@ class CognitionReplApp(App):
         Binding("ctrl+c", "confirm_quit", "Exit", show=False),
         Binding("escape", "handle_escape", "Cancel", show=True),
         Binding("ctrl+m", "pick_model", "Models", show=True),
+        Binding("ctrl+o", "pick_model", "Models", show=True),
         Binding("ctrl+s", "action_start", "Start", show=True),
         Binding("ctrl+e", "prompt_end", "End", show=True),
         Binding("ctrl+l", "clear_log", "Clear", show=False),
         Binding("pageup", "scroll_up", "▲", show=False, priority=True),
         Binding("pagedown", "scroll_down", "▼", show=False, priority=True),
+        Binding("ctrl+up", "scroll_up", "▲", show=False, priority=True),
+        Binding("ctrl+down", "scroll_down", "▼", show=False, priority=True),
     ]
 
     def __init__(self, project_root: Path | None = None) -> None:
@@ -373,6 +376,7 @@ class CognitionReplApp(App):
         self._token_refresh_timer: Timer | None = None
         self._stream_token_base_total = 0
         self._stream_token_base_output = 0
+        self._typing_paused_for_scroll = False
 
     def _build_agent(self):
         try:
@@ -526,7 +530,8 @@ class CognitionReplApp(App):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        with Vertical(id="workspace"):
+        with Horizontal(id="workspace"):
+            yield ChromeStatic(CE_BRAND_MARKUP, id="brand-rail", markup=True)
             with Vertical(id="chat-column"):
                 with Horizontal(id="header-strip"):
                     yield ChromeStatic(
@@ -652,7 +657,7 @@ class CognitionReplApp(App):
         return (
             f"[dim]Model:[/] [cyan]{escape_markup(model)}[/]  "
             "[dim]Commands:[/] /plan /showplan /start /status /end /setup /keys  "
-            "[dim]Ctrl+M model · PgUp/PgDn scroll · drag-select copies[/]"
+            "[dim]Ctrl+O model · /model · PgUp/PgDn scroll · drag-select copies[/]"
         )
 
     def _tick_tip(self) -> None:
@@ -754,7 +759,7 @@ class CognitionReplApp(App):
             "\n", "\n[#79c0ff]│ [/#79c0ff]"
         )
         self._log(
-            "\n[bold #79c0ff]┏━ Assistant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
+            "\n[bold #79c0ff]┏━ ◈ Cognition Engine ━━━━━━━━━━━━━━━━━━━━━[/]\n"
             f"[#79c0ff]│ [/#79c0ff]{body}\n"
             "[bold #79c0ff]┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
         )
@@ -787,7 +792,7 @@ class CognitionReplApp(App):
     def _assistant_stream_markup(self, text: str) -> str:
         body = escape_markup(text).replace("\n", "\n[#79c0ff]│ [/#79c0ff]")
         return (
-            "\n[bold #79c0ff]┏━ Assistant ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
+            "\n[bold #79c0ff]┏━ ◈ Cognition Engine ━━━━━━━━━━━━━━━━━━━━━[/]\n"
             f"[#79c0ff]│ [/#79c0ff]{body}\n"
             "[bold #79c0ff]┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
         )
@@ -819,6 +824,11 @@ class CognitionReplApp(App):
         buf = self._canonical_assist_buffer()
         if not buf.strip():
             return
+        log = self.query_one("#log", ChatRichLog)
+        if self._typing_paused_for_scroll:
+            if not log.is_vertical_scroll_end:
+                return
+            self._typing_paused_for_scroll = False
         if not self._assist_header_done:
             self._write_assistant_stream_header()
             self._assist_header_done = True
@@ -828,7 +838,6 @@ class CognitionReplApp(App):
         if end > self._assist_body_typed:
             self._assist_body_typed = end
             visible = buf[:end]
-            log = self.query_one("#log", ChatRichLog)
             follow = log.is_vertical_scroll_end
             log.update_stream_frame(
                 self._assistant_stream_markup(visible),
@@ -879,8 +888,8 @@ class CognitionReplApp(App):
         chat_input = self.query_one("#input", Input)
         if busy:
             composer.add_class("-busy")
-            chat_input.disabled = True
-            chat_input.placeholder = "Working… Esc to cancel"
+            chat_input.disabled = False
+            chat_input.placeholder = "Keep drafting while Cognition Engine works. Esc cancels"
         else:
             composer.remove_class("-busy")
             chat_input.disabled = False
@@ -915,7 +924,7 @@ class CognitionReplApp(App):
         self._update_thinking_box()
         if self._thinking_timer is not None:
             self._thinking_timer.stop()
-        self._thinking_timer = self.set_interval(0.1, self._tick_thinking)
+        self._thinking_timer = self.set_interval(0.25, self._tick_thinking)
         if self._typing_timer is not None:
             self._typing_timer.stop()
         self._typing_timer = self.set_interval(0.05, self._typing_tick)
@@ -960,7 +969,7 @@ class CognitionReplApp(App):
         self._start_thinking()
         self._log_work("Starting agent turn…")
         self._log(
-            "[dim #8b949e]Agentic mode — tools run live (see right panel + lines below).[/]"
+            "[dim #8b949e]Cognition Engine is working — progress appears below the chat.[/]"
         )
 
         def run_chat() -> ChatJobResult:
@@ -1324,6 +1333,10 @@ class CognitionReplApp(App):
             pass
         finally:
             self._select_syncing = False
+        try:
+            self.query_one("#input", Input).focus()
+        except Exception:
+            pass
 
     def _slash_matches(self, value: str) -> list[str]:
         if not value.lstrip().startswith("/"):
@@ -1349,6 +1362,18 @@ class CognitionReplApp(App):
         self._refresh_slash_suggest(event.value)
 
     def on_key(self, event: events.Key) -> None:
+        if event.key in ("pageup", "ctrl+up"):
+            self.action_scroll_up()
+            event.stop()
+            return
+        if event.key in ("pagedown", "ctrl+down"):
+            self.action_scroll_down()
+            event.stop()
+            return
+        if event.key in ("ctrl+o", "ctrl+m"):
+            self.action_pick_model()
+            event.stop()
+            return
         if event.key != "tab":
             return
         w = self.focused
@@ -1389,10 +1414,16 @@ class CognitionReplApp(App):
         return self.query_one("#log", ChatRichLog)
 
     def action_scroll_up(self) -> None:
-        self._scroll_target().scroll_up(animate=False)
+        target = self._scroll_target()
+        if self._typing_timer is not None:
+            self._typing_paused_for_scroll = True
+        target.scroll_page_up(animate=False)
 
     def action_scroll_down(self) -> None:
-        self._scroll_target().scroll_down(animate=False)
+        target = self._scroll_target()
+        target.scroll_page_down(animate=False)
+        if getattr(target, "is_vertical_scroll_end", False):
+            self._typing_paused_for_scroll = False
 
     def action_request_quit(self) -> None:
         self.action_confirm_quit()
@@ -1404,7 +1435,9 @@ class CognitionReplApp(App):
             pass
         line = event.value.strip()
         if self._chat_busy:
-            self._log_system("[yellow]Still working — Esc to cancel, then type again.[/]")
+            self._log_system(
+                "[yellow]Still working — your draft stayed in the prompt. Esc cancels.[/]"
+            )
             return
         event.input.value = ""
         if not line:

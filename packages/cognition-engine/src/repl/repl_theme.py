@@ -39,7 +39,20 @@ Footer {
 #workspace {
     height: 1fr;
     width: 100%;
-    layout: vertical;
+    layout: horizontal;
+}
+
+#brand-rail {
+    width: 12;
+    min-width: 10;
+    max-width: 14;
+    height: 1fr;
+    background: #070b10;
+    border-right: solid #1f6feb;
+    color: #58a6ff;
+    padding: 1 1;
+    content-align: center top;
+    text-align: center;
 }
 
 #left-rail {
