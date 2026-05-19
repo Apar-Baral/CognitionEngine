@@ -46,7 +46,7 @@ from src.cli.setup_summary import (
 )
 from src.repl.agent_tasks import TaskBoard, ingest_activity, task_board_markup
 from src.repl.chat_log import ChatRichLog
-from src.repl.clipboard_util import copy_to_clipboard, save_copy_fallback
+from src.repl.clipboard_util import save_copy_fallback
 from src.repl.live_thinking import LiveAgentView, live_thinking_markup
 from src.repl.markup_safe import escape_markup
 from src.repl.rail_sidebar import format_left_rail
@@ -63,15 +63,12 @@ COMMAND_BUTTONS: list[tuple[str, str, str]] = [
     ("btn-show-plan", "Show plan", "primary"),
     ("btn-shield", "Shield info", ""),
     ("btn-status", "Track progress", ""),
-    ("btn-copy", "Copy chat", ""),
     ("btn-end", "End session", ""),
     ("btn-setup", "Setup keys", "primary"),
     ("btn-quit", "Exit CE", "danger"),
 ]
 
-COMMAND_HINTS = (
-    "[dim]Ctrl+M[/] models · [dim]Ctrl+Y[/] copy chat · [dim]PgUp[/]/[dim]Dn[/] scroll"
-)
+COMMAND_HINTS = "[dim]Ctrl+M[/] models · [dim]PgUp[/]/[dim]Dn[/] scroll · drag to copy"
 
 
 @dataclass(frozen=True)
@@ -352,7 +349,6 @@ class CognitionReplApp(App):
         Binding("ctrl+m", "pick_model", "Models", show=True),
         Binding("ctrl+s", "action_start", "Start", show=True),
         Binding("ctrl+e", "prompt_end", "End", show=True),
-        Binding("ctrl+y", "copy_chat", "Copy chat", show=True),
         Binding("ctrl+l", "clear_log", "Clear", show=False),
         Binding("pageup", "scroll_up", "▲", show=False, priority=True),
         Binding("pagedown", "scroll_down", "▼", show=False, priority=True),
@@ -457,9 +453,6 @@ class CognitionReplApp(App):
             if plan and (not self._live_view.planned or self._live_view.planned[-1] != plan):
                 self._live_view.planned.append(plan)
         self._log_work(msg)
-        if self._chat_busy:
-            safe = escape_markup(msg)
-            self._log(f"[dim #8b949e]⚙ {safe}[/]")
         if self._chat_busy:
             self._update_thinking_box()
 
@@ -573,13 +566,6 @@ class CognitionReplApp(App):
                     yield ChromeStatic(COMMAND_HINTS, id="command-hints", markup=True)
             with Vertical(id="chat-column"):
                 with Horizontal(id="header-strip"):
-                    yield Select(
-                        model_options,
-                        id="model-select",
-                        prompt="▼ Choose model",
-                        value=model_value,
-                        allow_blank=False,
-                    )
                     yield ChromeStatic(
                         self._header_meta_text(),
                         id="header-meta",
@@ -607,6 +593,13 @@ class CognitionReplApp(App):
                             placeholder="Ask anything — type / for commands",
                             id="input",
                         )
+                        yield Select(
+                            model_options,
+                            id="model-select",
+                            prompt="Model",
+                            value=model_value,
+                            allow_blank=False,
+                        )
                     yield ChromeStatic("", id="slash-suggest", markup=True, classes="hidden")
             with Vertical(id="trace-rail"):
                 yield ChromeStatic("AGENT TRACE", classes="rail-section-title")
@@ -620,9 +613,7 @@ class CognitionReplApp(App):
                         min_width=1,
                     )
                 yield ChromeStatic(
-                    "[dim]Click the log, then drag to select text · "
-                    "Shift+drag if selection does not start · "
-                    "terminal copy:[/] [dim]CE_NATIVE_COPY=1[/]",
+                    "[dim]Native terminal copy is default · Ctrl+M models[/]",
                     id="trace-hint",
                     markup=True,
                 )
@@ -900,12 +891,6 @@ class CognitionReplApp(App):
     def _log_system(self, text: str) -> None:
         self._log(f"[dim]· {text}[/]")
 
-    def _copy_chat_to_clipboard(self) -> None:
-        text = self.query_one("#log", ChatRichLog).plain_text()
-        ok, msg = copy_to_clipboard(text)
-        level = "green" if ok else "yellow"
-        self._log_system(f"[{level}]{escape_markup(msg)}[/]")
-
     def _display_plan(self, *, generate: bool = False) -> None:
         """Show plan in main chat immediately (sync — reliable visibility)."""
         if not self.bridge.ctx.is_initialized():
@@ -1113,7 +1098,7 @@ class CognitionReplApp(App):
 
             if needs_quick_setup():
                 self._log(
-                    "[yellow]Setup skipped.[/] Click [bold]Setup keys[/] or export an API key "
+                    "[yellow]Setup skipped.[/] Type [bold]/setup[/] or export an API key "
                     "(e.g. ANTHROPIC_API_KEY). [dim]/keys[/] shows status."
                 )
 
@@ -1136,8 +1121,6 @@ class CognitionReplApp(App):
         elif bid == "btn-status":
             if self._require_project("Status"):
                 self._run_bridge(lambda: self.bridge.cmd_status())
-        elif bid == "btn-copy":
-            self._copy_chat_to_clipboard()
         elif bid == "btn-plan":
             self._prompt_plan()
         elif bid == "btn-show-plan":
@@ -1273,7 +1256,7 @@ class CognitionReplApp(App):
             self._typing_full = ""
             self._hide_thinking_ui()
             self._log_system(
-                "Chat needs an API key. Click [bold]Setup keys[/] or type /keys"
+                "Chat needs an API key. Type [bold]/setup[/] or /keys"
             )
         if self._agent:
             self._apply_token_usage(dict(self._agent.session_tokens))
@@ -1396,9 +1379,6 @@ class CognitionReplApp(App):
     def action_clear_log(self) -> None:
         self.query_one("#log", ChatRichLog).clear()
 
-    def action_copy_chat(self) -> None:
-        self._copy_chat_to_clipboard()
-
     def _scroll_target(self) -> VerticalScroll | PaneScroll | ChatRichLog:
         w = self.focused
         if isinstance(w, (VerticalScroll, PaneScroll)):
@@ -1470,10 +1450,6 @@ class CognitionReplApp(App):
                 )
                 self._refresh_chrome(sync_select=False)
                 return
-            if cmd == "/copy":
-                self._log_user(line)
-                self._copy_chat_to_clipboard()
-                return
             self._log_user(line)
             result = self.bridge.dispatch(line)
             if result == "__EXIT__":
@@ -1503,20 +1479,20 @@ class CognitionReplApp(App):
             self._begin_chat(line)
         else:
             self._log_system(
-                "Chat needs an API key. Click [bold]Setup keys[/] or type /keys"
+                "Chat needs an API key. Type [bold]/setup[/] or /keys"
             )
 
     def run_app(self) -> None:
         """Run TUI.
 
-        Default: Textual owns mouse so buttons, dropdowns, and wheel scrolling work.
-        For terminal selection/copy, hold Shift while dragging in most terminals.
+        Default: terminal owns mouse so normal drag-highlight + Ctrl+Shift+C works.
+        Use keyboard shortcuts/slash commands for actions.
 
-        ``CE_NATIVE_COPY=1``: terminal owns mouse + Ctrl+Shift+C; use PgUp/PgDn
-        to scroll because app clicks and mouse wheel are disabled in that mode.
+        ``CE_APP_MOUSE=1`` or ``CE_NATIVE_COPY=0`` re-enables Textual mouse events.
         """
         import os
 
-        native = os.environ.get("CE_NATIVE_COPY", "0").strip().lower()
-        use_mouse = native not in ("1", "true", "yes")
+        native = os.environ.get("CE_NATIVE_COPY", "1").strip().lower()
+        app_mouse = os.environ.get("CE_APP_MOUSE", "0").strip().lower()
+        use_mouse = app_mouse in ("1", "true", "yes") or native in ("0", "false", "no")
         self.run(mouse=use_mouse)

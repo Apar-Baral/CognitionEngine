@@ -22,7 +22,8 @@ from src.models.response_parser import ResponseParser
 
 logger = logging.getLogger(__name__)
 
-MAX_AGENT_STEPS = 40
+MAX_AGENT_STEPS = 12
+MAX_TOOL_RESULT_CHARS = 2_400
 
 TOOL_SPEC = """
 ## Tools (you MUST use these to change the project — not chat-only plans)
@@ -41,8 +42,10 @@ Rules:
 - Do not use rm in run_command unless the user has granted delete for this session.
 - Creating N files = N separate write_file calls (one path each, full content each).
 - To run scripts or shell: run_command (python, bash, grep, find, mkdir, etc.).
-- After each tool you receive [tool result] and may call more tools in the next step.
+- Read only files you need. Do not repeatedly read the same file unless a tool changed it.
+- After each tool you receive a compact [tool result]; ask for targeted files, not whole trees.
 - When the task is fully done, reply with normal markdown only (no tool JSON).
+- Final answer should include: changed files, commands/tests run, and remaining issues.
 - NEVER claim files were created without calling write_file.
 """
 
@@ -79,6 +82,7 @@ class AgentOrchestrator:
         }
         self._files_written_this_turn = 0
         self._commands_run_this_turn = 0
+        self._read_files_this_turn: set[str] = set()
 
     def _activity(self, msg: str) -> None:
         try:
@@ -140,6 +144,7 @@ class AgentOrchestrator:
         self._history.append({"role": "user", "content": user_message})
         self._files_written_this_turn = 0
         self._commands_run_this_turn = 0
+        self._read_files_this_turn = set()
         if is_agentic_request(user_message):
             return self._chat_agentic(user_message)
         return self._chat_quick(user_message)
@@ -155,7 +160,7 @@ class AgentOrchestrator:
             system,
             step=0,
             stream=True,
-            max_tokens=2048,
+            max_tokens=1024,
             history_limit=8,
         )
         from src.repl.response_clean import clean_assistant_text
@@ -175,7 +180,15 @@ class AgentOrchestrator:
 
         for step in range(1, MAX_AGENT_STEPS + 1):
             self._activity(f"Model step {step}/{MAX_AGENT_STEPS}…")
-            text = self._call_model(model, api_key, system, step=step, stream=True)
+            text = self._call_model(
+                model,
+                api_key,
+                system,
+                step=step,
+                stream=True,
+                max_tokens=4096,
+                history_limit=10,
+            )
             calls = extract_tool_calls(text)
             if not calls:
                 from src.repl.response_clean import clean_assistant_text
@@ -197,7 +210,7 @@ class AgentOrchestrator:
             tool_results: list[str] = []
             for call in calls:
                 result = self._execute_tool(call)
-                tool_results.append(result)
+                tool_results.append(_compact_tool_result(result))
                 preview = result.replace("\n", " ")[:160]
                 self._activity(f"✓ Done: {preview}")
 
@@ -225,6 +238,8 @@ class AgentOrchestrator:
             parts.append(f"**Files written this turn:** {self._files_written_this_turn}")
         if self._commands_run_this_turn:
             parts.append(f"**Commands run:** {self._commands_run_this_turn}")
+        if self._read_files_this_turn:
+            parts.append(f"**Files read:** {len(self._read_files_this_turn)}")
         return " · ".join(parts)
 
     def _call_model(
@@ -332,6 +347,9 @@ class AgentOrchestrator:
 
         if name == "read_file":
             path = str(args.get("path", ""))
+            if path in self._read_files_this_turn:
+                return f"Already read {path} this turn; use prior context unless it changed."
+            self._read_files_this_turn.add(path)
             self._activity(f"📖 Reading file: {path}")
             return self.tools.read_file(path)
 
@@ -361,8 +379,9 @@ class AgentOrchestrator:
             )
             self._activity("🛡 Shield: validating before write…")
             result = self.tools.write_file(path, content, self.ctx)
-            if result.startswith("Wrote"):
+            if result.startswith(("Created", "Updated")):
                 self._files_written_this_turn += 1
+                self._read_files_this_turn.discard(path)
             self._activity(f"📝 Write result: {result[:120]}")
             return result
 
@@ -431,3 +450,12 @@ class AgentOrchestrator:
 
 def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4) if text.strip() else 0
+
+
+def _compact_tool_result(result: str) -> str:
+    if len(result) <= MAX_TOOL_RESULT_CHARS:
+        return result
+    head = result[: int(MAX_TOOL_RESULT_CHARS * 0.7)]
+    tail = result[-int(MAX_TOOL_RESULT_CHARS * 0.3) :]
+    omitted = len(result) - len(head) - len(tail)
+    return f"{head}\n\n...[{omitted:,} chars omitted to save context]...\n\n{tail}"

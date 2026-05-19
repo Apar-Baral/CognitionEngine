@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cognition-engine"
-version = "0.3.49"
+version = "0.3.50"
 description = "AI development orchestrator providing persistent memory, planning, hallucination prevention, and cost control."
 readme = "README.md"
 requires-python = ">=3.11"

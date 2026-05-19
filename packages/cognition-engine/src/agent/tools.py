@@ -6,6 +6,7 @@ import os
 import re
 import shlex
 import subprocess
+from difflib import SequenceMatcher
 from pathlib import Path
 
 # Base executables allowed in pipelines (first token of each segment).
@@ -92,7 +93,10 @@ def command_is_allowed(cmd_line: str, *, grants: frozenset[str] | None = None) -
         base = parts[0]
         extra = frozenset({"rm", "unlink"}) if grants and PERM_DELETE in grants else frozenset()
         if base not in ALLOWED_COMMANDS and base not in extra:
-            return False, f"'{base}' not in allowlist (delete needs your approval — use delete_file tool)"
+            return (
+                False,
+                f"'{base}' not in allowlist (delete needs approval via delete_file tool)",
+            )
     return True, ""
 
 
@@ -108,7 +112,7 @@ class ToolRunner:
             return f"Error: not a directory {rel_path}"
         entries: list[str] = []
         try:
-            for child in sorted(path.iterdir())[:200]:
+            for child in sorted(path.iterdir())[:80]:
                 kind = "/" if child.is_dir() else ""
                 entries.append(f"{child.name}{kind}")
         except OSError as exc:
@@ -124,8 +128,8 @@ class ToolRunner:
         if not path.is_file():
             return f"Error: not found {rel_path}"
         text = path.read_text(encoding="utf-8", errors="replace")
-        if len(text) > 12000:
-            return text[:12000] + "\n…(truncated)"
+        if len(text) > 6000:
+            return text[:6000] + "\n...(truncated; ask for a targeted section if needed)"
         return text
 
     def write_file(self, rel_path: str, content: str, ctx: object | None = None) -> str:
@@ -145,9 +149,12 @@ class ToolRunner:
                     return f"Shield blocked write: {[e.description for e in result.errors[:3]]}"
             except Exception:
                 pass
+        old_text = path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+        added, removed = _line_delta(old_text, content)
+        action = "Updated" if path.is_file() else "Created"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
-        return f"Wrote {rel_path} ({len(content)} bytes)"
+        return f"{action} {rel_path} (+{added} -{removed}, {len(content)} bytes)"
 
     def delete_file(self, rel_path: str) -> str:
         path = (self.root / rel_path).resolve()
@@ -185,7 +192,7 @@ class ToolRunner:
             out = (proc.stdout or "") + (proc.stderr or "")
             if proc.returncode != 0 and not out.strip():
                 out = f"(exit {proc.returncode})"
-            return out[:8000] or f"(exit {proc.returncode})"
+            return out[:4000] or f"(exit {proc.returncode})"
         except subprocess.TimeoutExpired:
             return "Error: command timed out (180s)"
         except Exception as exc:
@@ -193,11 +200,11 @@ class ToolRunner:
 
     def suggest_next(self, ctx: object) -> str:
         try:
-            from src.navigator.recommendation_engine import RecommendationEngine
             from src.navigator.complexity_forecaster import ComplexityForecaster
             from src.navigator.debt_detector import DebtDetector
             from src.navigator.dependency_resolver import DependencyResolver
             from src.navigator.phase_tracker import PhaseTracker
+            from src.navigator.recommendation_engine import RecommendationEngine
 
             c = ctx  # ProjectContext
             rec = RecommendationEngine(
@@ -210,3 +217,16 @@ class ToolRunner:
             return rec.get_next_session_prompt()
         except Exception as exc:
             return f"Could not suggest: {exc}"
+
+
+def _line_delta(old: str, new: str) -> tuple[int, int]:
+    old_lines = old.splitlines()
+    new_lines = new.splitlines()
+    added = 0
+    removed = 0
+    for tag, i1, i2, j1, j2 in SequenceMatcher(a=old_lines, b=new_lines).get_opcodes():
+        if tag in ("replace", "delete"):
+            removed += i2 - i1
+        if tag in ("replace", "insert"):
+            added += j2 - j1
+    return added, removed

@@ -118,30 +118,14 @@ Footer {
     height: 1fr;
 }
 
-/* ── Model row: dropdown must stay visible (no squeezed Select) ── */
+/* ── Header: metadata only, keep output area tall ── */
 #header-strip {
     height: auto;
-    min-height: 3;
-    /* max-height was clipping the Select overlay on some terminals */
+    min-height: 1;
     background: #161b22;
-    border: solid #388bfd;
+    border-bottom: solid #30363d;
     padding: 0 1;
-    margin: 0 0 1 0;
-}
-
-#header-strip #model-select {
-    width: 54;
-    min-width: 24;
-    max-width: 58;
-    border: solid #58a6ff;
-    background: #161b22;
-    margin: 0 1 0 0;
-    color: #e6edf3;
-    text-style: bold;
-}
-
-#header-strip #model-select:focus {
-    border: solid #79c0ff;
+    margin: 0;
 }
 
 #header-meta {
@@ -266,6 +250,16 @@ Footer {
 #input:focus {
     border: none;
     background: #0d1117;
+}
+
+#composer #model-select {
+    width: 34;
+    min-width: 26;
+    max-width: 40;
+    height: 1;
+    border: none;
+    background: #0d1117;
+    color: #8b949e;
 }
 
 #slash-suggest {

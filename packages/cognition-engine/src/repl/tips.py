@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 CE_TIPS: list[str] = [
-    "Buttons, dropdowns, and mouse wheel work by default.",
-    "For terminal copy while app mouse is on, hold Shift while dragging in most terminals.",
+    "Terminal copy works by default: drag-highlight, then Ctrl+Shift+C.",
+    "Use Ctrl+M to open the model picker; use slash commands for actions.",
     "Last assistant reply is always mirrored to ~/.cognition/last_reply.txt for manual copy.",
-    "Click chat or trace, then PgUp/PgDn to scroll that pane; mouse wheel works by default.",
+    "Use PgUp/PgDn to scroll the active pane.",
     "Ctrl+M opens the searchable model picker.",
-    "Change model in the top strip dropdown — keys auto-match provider.",
+    "Change model with Ctrl+M or /model MODEL_ID — keys auto-match provider.",
     "Simple questions use quick reply; file/command tasks use agent tools.",
     "Setup keys once — stores DeepSeek under deepseek, not openai.",
     "Generate plan after /goal — builds 8–24 phases in DNA.",
@@ -25,7 +25,7 @@ CE_TIPS: list[str] = [
     "Quick mode: explain concepts, who are you, how CE works — no tool loop.",
     "On Kali: sudo apt install -y xclip if you pipe last_reply.txt to the clipboard.",
     "Linux paste in terminal: Ctrl+Shift+V or middle-click.",
-    "CE_NATIVE_COPY=1 disables app mouse for terminal-only selection/copy.",
+    "Set CE_APP_MOUSE=1 only if you prefer mouse clicks over terminal-native copy.",
     "Git identity: Cursor Settings → Git + ~/.cognition/config.yaml git.user_name.",
     "Project must be initialized (green dot) before /start and /plan.",
     "Track progress button runs /status in the sidebar.",
