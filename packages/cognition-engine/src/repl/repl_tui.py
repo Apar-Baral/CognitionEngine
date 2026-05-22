@@ -45,7 +45,7 @@ from src.cli.setup_summary import (
 )
 from src.repl.agent_tasks import TaskBoard, ingest_activity, task_board_markup
 from src.repl.chat_log import ChatRichLog
-from src.repl.clipboard_util import save_copy_fallback
+from src.repl.clipboard_util import copy_to_clipboard, save_copy_fallback
 from src.repl.live_thinking import LiveAgentView, live_thinking_markup
 from src.repl.markup_safe import escape_markup
 from src.repl.repl_theme import CE_APP_CSS, CE_BRAND_MARKUP, ChromeStatic
@@ -355,6 +355,10 @@ class ComposerInput(Input):
         if event.key in ("ctrl+o", "ctrl+m"):
             self.app.action_pick_model()
             event.stop()
+            return
+        if event.key == "ctrl+y":
+            self.app.action_copy_last()
+            event.stop()
 
 
 class CognitionReplApp(App):
@@ -373,6 +377,7 @@ class CognitionReplApp(App):
         Binding("ctrl+o", "pick_model", "Models", show=True),
         Binding("ctrl+s", "action_start", "Start", show=True),
         Binding("ctrl+e", "prompt_end", "End", show=True),
+        Binding("ctrl+y", "copy_last", "Copy", show=True),
         Binding("ctrl+l", "clear_log", "Clear", show=False),
         Binding("pageup", "scroll_up", "▲", show=False, priority=True),
         Binding("pagedown", "scroll_down", "▼", show=False, priority=True),
@@ -693,8 +698,8 @@ class CognitionReplApp(App):
         model = str(self.bridge.ctx.config.get("default_model", "?"))
         return (
             f"[dim]Model:[/] [cyan]{escape_markup(model)}[/]  "
-            "[dim]Commands:[/] /plan /showplan /start /status /end /setup /keys  "
-            "[dim]Ctrl+O model · /model · PgUp/PgDn scroll · drag-select copies[/]"
+            "[dim]Commands:[/] /plan /showplan /start /status /copy /setup  "
+            "[dim]Ctrl+O model · Ctrl+Y copy · wheel/PgUp/PgDn scroll[/]"
         )
 
     def _tick_tip(self) -> None:
@@ -1355,6 +1360,17 @@ class CognitionReplApp(App):
     def action_start(self) -> None:
         self._run_bridge(lambda: self.bridge.cmd_start())
 
+    def _copy_text(self, text: str, label: str) -> None:
+        ok, msg = copy_to_clipboard(text)
+        color = "green" if ok else "yellow"
+        self._log_system(f"[{color}]{label}: {escape_markup(msg)}[/]")
+
+    def action_copy_last(self) -> None:
+        text = (self._last_assistant_plain or "").strip()
+        if not text:
+            text = self.query_one("#log", ChatRichLog).plain_text().strip()
+        self._copy_text(text, "Copy")
+
     def action_pick_model(self) -> None:
         self.push_screen(ModelPickerScreen(self.bridge), self._on_model_picked)
 
@@ -1500,6 +1516,14 @@ class CognitionReplApp(App):
                 return
             if cmd == "/shield":
                 self._log(self.bridge.cmd_shield())
+                return
+            if cmd == "/copy":
+                arg = line.split(maxsplit=1)[1].strip().lower() if " " in line else "last"
+                if arg == "all":
+                    text = self.query_one("#log", ChatRichLog).plain_text().strip()
+                    self._copy_text(text, "Copy all")
+                else:
+                    self.action_copy_last()
                 return
             if cmd == "/keys":
                 from src.cli.api_key_providers import format_keys_report
